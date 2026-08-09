@@ -362,6 +362,18 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- TRANSACTION DETAILS SHEET -->
+<div class="sheet-overlay" id="detail-overlay"></div>
+<div class="sheet" id="detail-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <button class="cancel" id="detail-close">Zatvori</button>
+    <h2>Detalji transakcije</h2>
+    <div style="width:50px;"></div>
+  </div>
+  <div id="detail-content"></div>
+</div>
+
 <script>
 const SUPABASE_URL = 'https://zesafmnhndjzfszzibmt.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_nPTAOALj_0gmXyjEjBzS4Q_tx9sD4Z4';
@@ -379,6 +391,8 @@ let selectedCategoryId = null;
 let currentUserName = '';
 let realtimeChannel = null;
 let receiptUrl = null;
+let receiptItems = null;
+let receiptShop = null;
 let editingCategoryId = null;
 let catFormType = 'expense';
 let catFormColor = THEME_COLORS[0];
@@ -573,7 +587,7 @@ function txRowHTML(t) {
   const dateLabel = new Date(t.date).toLocaleDateString('sr-RS', { day:'numeric', month:'short' });
   const pay = t.payment_method === 'cash' ? 'cash' : 'account';
   const payLabel = pay === 'cash' ? 'Keš' : 'Račun';
-  return `<div class="tx-row">
+  return `<div class="tx-row" data-tx-id="${t.id}">
       <div class="tx-icon" style="background:${(cat?cat.color:'#8E8E93')}22;">${cat ? cat.icon : '💳'}</div>
       <div class="tx-info">
         <div class="cat">${cat ? cat.name : 'Bez kategorije'} <span class="pay-badge ${pay}">${payLabel}</span></div>
@@ -702,7 +716,7 @@ function openSheet() {
 }
 function closeSheet() {
   $('#overlay').classList.remove('show'); $('#add-sheet').classList.remove('show');
-  $('#amount-input').value=''; $('#desc-input').value=''; selectedCategoryId=null; currentType='expense'; currentPayment='account'; receiptUrl=null;
+  $('#amount-input').value=''; $('#desc-input').value=''; selectedCategoryId=null; currentType='expense'; currentPayment='account'; receiptUrl=null; receiptItems=null; receiptShop=null;
   $$('#type-seg button').forEach(b=>b.classList.remove('active')); $('#type-seg button[data-type="expense"]').classList.add('active');
   $$('#payment-seg button').forEach(b=>b.classList.remove('active')); $('#payment-seg button[data-payment="account"]').classList.add('active');
   validateForm();
@@ -749,7 +763,7 @@ $('#save-btn').addEventListener('click', async () => {
     date: $('#date-input').value || todayISO(),
     description: $('#desc-input').value.trim() || null,
     created_by: user ? user.id : null, created_by_name: currentUserName,
-    receipt_url: receiptUrl
+    receipt_url: receiptUrl, receipt_items: receiptItems, receipt_shop: receiptShop
   };
   $('#save-btn').disabled = true; $('#save-btn').textContent = 'Čuvanje...';
   try {
@@ -803,13 +817,81 @@ function scanFrame() {
       $('#receipt-attached').style.display = 'block';
       $('#receipt-link-preview').href = receiptUrl;
       if (!$('#desc-input').value) $('#desc-input').value = 'Fiskalni račun';
-      toast('✓ QR pročitan — proveri i sačuvaj');
       closeQrSheet();
+      analyzeReceipt(receiptUrl);
       return;
     }
   }
   requestAnimationFrame(scanFrame);
 }
+
+async function analyzeReceipt(url) {
+  toast('🔎 Analiziram račun...');
+  try {
+    const { data, error } = await client.functions.invoke('parse-receipt', { body: { url } });
+    if (error) throw error;
+    if (data && data.success) {
+      receiptItems = data.items || [];
+      receiptShop = data.metadata?.shopFullName || null;
+      if (data.totalAmount) { $('#amount-input').value = String(data.totalAmount); }
+      if (receiptShop && (!$('#desc-input').value || $('#desc-input').value === 'Fiskalni račun')) {
+        $('#desc-input').value = receiptShop;
+      }
+      toast('✓ Račun očitan (' + (data.items?.length || 0) + ' stavki) — proveri i sačuvaj');
+    } else {
+      toast('⚠️ Automatsko čitanje nije uspelo — unesi iznos ručno');
+    }
+  } catch (e) {
+    console.error(e);
+    toast('⚠️ Automatska analiza trenutno nedostupna — unesi iznos ručno');
+  }
+  validateForm();
+}
+
+// ---------- DETALJI TRANSAKCIJE ----------
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.receipt-link')) return;
+  const row = e.target.closest('.tx-row');
+  if (!row) return;
+  openTxDetails(row.dataset.txId);
+});
+function openTxDetails(id) {
+  const t = transactions.find(tx => tx.id === id);
+  if (!t) return;
+  const cat = catById(t.category_id);
+  const dateLabel = new Date(t.date).toLocaleDateString('sr-RS', { day:'numeric', month:'long', year:'numeric' });
+  let html = `
+    <div style="text-align:center; margin-bottom:18px;">
+      <div style="font-size:32px; font-weight:700; color:${t.type==='income'?'var(--green)':'var(--text)'};">${t.type==='income'?'+':'−'} ${fmt(t.amount)}</div>
+      <div style="color:var(--text-secondary); font-size:13px; margin-top:4px;">${dateLabel}</div>
+    </div>
+    <div class="card-list" style="margin-bottom:16px;">
+      <div class="tx-row"><div class="tx-info"><div class="cat">${cat?cat.icon:'💳'} ${cat?cat.name:'Bez kategorije'}</div></div></div>
+      <div class="tx-row"><div class="tx-info"><div class="desc">${t.description || 'Bez opisa'}</div></div></div>
+      <div class="tx-row"><div class="tx-info"><div class="desc">Uneo/la: ${t.created_by_name || '—'} · ${t.payment_method==='cash'?'Keš':'Račun'}</div></div></div>
+    </div>`;
+
+  if (t.receipt_shop) {
+    html += `<div class="section-title" style="margin-top:0;">🧾 ${t.receipt_shop}</div>`;
+  }
+  if (Array.isArray(t.receipt_items) && t.receipt_items.length) {
+    html += `<div class="card-list" style="margin-bottom:16px;">` + t.receipt_items.map(it => `
+      <div class="tx-row">
+        <div class="tx-info">
+          <div class="cat" style="font-size:14px;">${it.name || 'Artikal'}</div>
+          <div class="desc">${it.quantity || 1} × ${fmt(it.unitPrice || 0)}</div>
+        </div>
+        <div class="tx-meta"><div class="tx-amount">${fmt(it.total || 0)}</div></div>
+      </div>`).join('') + `</div>`;
+  }
+  if (t.receipt_url) {
+    html += `<a href="${t.receipt_url}" target="_blank" style="display:block; text-align:center; color:var(--accent); font-size:14px; font-weight:600; padding:8px;">🔗 Otvori i proveri na Poreskoj upravi</a>`;
+  }
+  $('#detail-content').innerHTML = html;
+  $('#detail-overlay').classList.add('show'); $('#detail-sheet').classList.add('show');
+}
+$('#detail-close').addEventListener('click', () => { $('#detail-overlay').classList.remove('show'); $('#detail-sheet').classList.remove('show'); });
+$('#detail-overlay').addEventListener('click', () => { $('#detail-overlay').classList.remove('show'); $('#detail-sheet').classList.remove('show'); });
 
 // ---------- INIT ----------
 (async () => {

@@ -323,13 +323,35 @@
   <div class="sheet-handle"></div>
   <div class="sheet-header">
     <button class="cancel" id="qr-cancel">Zatvori</button>
-    <h2>Skeniraj QR</h2>
+    <h2>Fiskalni račun</h2>
     <div style="width:50px;"></div>
   </div>
-  <p style="font-size:13px; color:var(--text-secondary); margin-top:0;">Usmeri kameru na QR kod u dnu fiskalnog računa.</p>
-  <video id="qr-video" playsinline></video>
-  <canvas id="qr-canvas"></canvas>
-  <button class="secondary-btn" id="qr-manual-btn">Nemam kameru — otvori proveru ručno</button>
+
+  <div id="qr-mode-camera">
+    <p style="font-size:13px; color:var(--text-secondary); margin-top:0;">Usmeri kameru na QR kod u dnu fiskalnog računa.</p>
+    <video id="qr-video" playsinline></video>
+    <canvas id="qr-canvas" style="display:none;"></canvas>
+  </div>
+
+  <input type="file" id="qr-file-input" accept="image/*" capture="environment" style="display:none;">
+  <button class="secondary-btn" id="qr-upload-btn" style="margin-top:12px;">📁 Učitaj sliku računa</button>
+  <button class="secondary-btn" id="qr-manual-toggle-btn">⌨️ Nemam QR — unesi ručno</button>
+
+  <div id="qr-manual-form" style="display:none; margin-top:16px;">
+    <div class="field-group">
+      <div class="field-label">PFR BROJ</div>
+      <input type="text" id="manual-pfr-input" placeholder="npr. Z9BR74H2" />
+    </div>
+    <div class="field-group">
+      <div class="field-label">UKUPAN IZNOS SA RAČUNA</div>
+      <input type="text" inputmode="decimal" id="manual-amount-input" placeholder="0" />
+    </div>
+    <div class="field-group">
+      <div class="field-label">NAZIV PRODAVNICE (OPCIONO)</div>
+      <input type="text" id="manual-shop-input" placeholder="npr. Maxi" />
+    </div>
+    <button class="save-btn" id="manual-confirm-btn">Prebaci u formu za unos</button>
+  </div>
 </div>
 
 <!-- ADD/EDIT CATEGORY SHEET -->
@@ -532,7 +554,22 @@ function setStatus(mode, label) {
 }
 async function addTransactionToDB(tx) {
   const { error } = await client.from('transactions').insert(tx);
-  if (error) throw error;
+  if (!error) return { ok: true };
+
+  // Ako kolone za račun (receipt_items i sl.) još ne postoje jer SQL
+  // migracija nije pokrenuta, sačuvaj bar osnovne podatke umesto da
+  // cela transakcija propadne.
+  if (/column .* does not exist/i.test(error.message)) {
+    const basic = { ...tx };
+    delete basic.receipt_items; delete basic.receipt_shop;
+    delete basic.pfr_number; delete basic.receipt_datetime;
+    const retry = await client.from('transactions').insert(basic);
+    if (!retry.error) {
+      return { ok: true, warning: 'Sačuvano, ali BEZ podataka o računu — pokreni supabase-fix-v3.sql da bi to radilo ubuduće.' };
+    }
+    throw retry.error;
+  }
+  throw error;
 }
 
 // ---------- RENDER ----------
@@ -767,15 +804,18 @@ $('#save-btn').addEventListener('click', async () => {
   };
   $('#save-btn').disabled = true; $('#save-btn').textContent = 'Čuvanje...';
   try {
-    await addTransactionToDB(newTx);
-    closeSheet(); toast('✓ Sačuvano');
+    const result = await addTransactionToDB(newTx);
+    closeSheet();
+    toast(result.warning ? '⚠️ ' + result.warning : '✓ Sačuvano');
   } catch (err) { toast('⚠️ Greška: ' + (err.message || 'čuvanje nije uspelo')); console.error(err); }
   finally { $('#save-btn').textContent = 'Sačuvaj'; $('#save-btn').disabled = false; }
 });
 
-// ---------- QR SKENER ----------
+// ---------- QR SKENER: kamera, upload slike, ručni unos ----------
 $('#scan-qr-btn').addEventListener('click', openQrSheet);
 function openQrSheet() {
+  $('#qr-manual-form').style.display = 'none';
+  $('#qr-mode-camera').style.display = 'block';
   $('#qr-overlay').classList.add('show'); $('#qr-sheet').classList.add('show');
   startQrScan();
 }
@@ -785,9 +825,6 @@ function closeQrSheet() {
 }
 $('#qr-cancel').addEventListener('click', closeQrSheet);
 $('#qr-overlay').addEventListener('click', closeQrSheet);
-$('#qr-manual-btn').addEventListener('click', () => {
-  window.open('https://suf.purs.gov.rs/verify/', '_blank');
-});
 
 async function startQrScan() {
   try {
@@ -797,7 +834,10 @@ async function startQrScan() {
     await video.play();
     requestAnimationFrame(scanFrame);
   } catch (e) {
-    toast('⚠️ Nema pristupa kameri — koristi ručnu proveru ispod');
+    console.error('Kamera nedostupna:', e);
+    // Kamera nije dostupna (npr. dozvola odbijena) — nije greška u app-u,
+    // samo sakrij video prikaz, upload/ručni unos i dalje rade.
+    $('#qr-mode-camera').style.display = 'none';
   }
 }
 function stopQrScan() {
@@ -813,16 +853,75 @@ function scanFrame() {
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const code = jsQR(imageData.data, imageData.width, imageData.height);
     if (code && code.data && code.data.startsWith('http')) {
-      receiptUrl = code.data;
-      $('#receipt-attached').style.display = 'block';
-      $('#receipt-link-preview').href = receiptUrl;
-      if (!$('#desc-input').value) $('#desc-input').value = 'Fiskalni račun';
-      closeQrSheet();
-      analyzeReceipt(receiptUrl);
+      handleReceiptUrl(code.data);
       return;
     }
   }
   requestAnimationFrame(scanFrame);
+}
+
+// Upload slike računa (umesto ili pored kamere)
+$('#qr-upload-btn').addEventListener('click', () => $('#qr-file-input').click());
+$('#qr-file-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    const canvas = $('#qr-canvas');
+    canvas.width = img.width; canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    if (code && code.data && code.data.startsWith('http')) {
+      handleReceiptUrl(code.data);
+    } else {
+      toast('⚠️ QR kod nije prepoznat na slici — probaj ručni unos');
+    }
+  };
+  img.src = URL.createObjectURL(file);
+});
+
+function handleReceiptUrl(url) {
+  receiptUrl = url;
+  $('#receipt-attached').style.display = 'block';
+  $('#receipt-link-preview').href = receiptUrl;
+  if (!$('#desc-input').value) $('#desc-input').value = 'Fiskalni račun';
+  closeQrSheet();
+  openSheetIfClosed();
+  analyzeReceipt(receiptUrl);
+}
+
+// Ručni unos (bez kamere/QR-a)
+$('#qr-manual-toggle-btn').addEventListener('click', () => {
+  stopQrScan();
+  $('#qr-mode-camera').style.display = 'none';
+  $('#qr-manual-form').style.display = 'block';
+});
+$('#manual-confirm-btn').addEventListener('click', () => {
+  const pfr = $('#manual-pfr-input').value.trim();
+  const amount = $('#manual-amount-input').value.trim();
+  const shop = $('#manual-shop-input').value.trim();
+  if (!amount || !(parseFloat(amount.replace(',','.')) > 0)) {
+    toast('⚠️ Unesi ispravan iznos'); return;
+  }
+  receiptUrl = null; // nema QR linka kod ručnog unosa
+  receiptShop = shop || null;
+  window.__manualPfr = pfr || null;
+  closeQrSheet();
+  openSheetIfClosed();
+  $('#amount-input').value = amount.replace(',','.');
+  if (shop && !$('#desc-input').value) $('#desc-input').value = shop;
+  toast('✓ Podaci uneti — izaberi kategoriju i sačuvaj');
+  validateForm();
+  // Reset polja za sledeći put
+  $('#manual-pfr-input').value = ''; $('#manual-amount-input').value = ''; $('#manual-shop-input').value = '';
+});
+function openSheetIfClosed() {
+  if (!$('#add-sheet').classList.contains('show')) {
+    $('#date-input').value = $('#date-input').value || todayISO();
+    $('#overlay').classList.add('show'); $('#add-sheet').classList.add('show');
+  }
 }
 
 async function analyzeReceipt(url) {
@@ -832,18 +931,19 @@ async function analyzeReceipt(url) {
     if (error) throw error;
     if (data && data.success) {
       receiptItems = data.items || [];
-      receiptShop = data.metadata?.shopFullName || null;
+      receiptShop = data.metadata?.shopFullName || receiptShop;
       if (data.totalAmount) { $('#amount-input').value = String(data.totalAmount); }
       if (receiptShop && (!$('#desc-input').value || $('#desc-input').value === 'Fiskalni račun')) {
         $('#desc-input').value = receiptShop;
       }
       toast('✓ Račun očitan (' + (data.items?.length || 0) + ' stavki) — proveri i sačuvaj');
     } else {
-      toast('⚠️ Automatsko čitanje nije uspelo — unesi iznos ručno');
+      const reason = (data && data.message) ? data.message : 'nepoznat razlog';
+      toast('⚠️ Automatska analiza nije uspela (' + reason + ') — unesi iznos ručno');
     }
   } catch (e) {
-    console.error(e);
-    toast('⚠️ Automatska analiza trenutno nedostupna — unesi iznos ručno');
+    console.error('parse-receipt greška:', e);
+    toast('⚠️ Automatska analiza nedostupna — unesi iznos ručno. (Detalji u konzoli / Edge Function logovima)');
   }
   validateForm();
 }
@@ -883,6 +983,10 @@ function openTxDetails(id) {
         </div>
         <div class="tx-meta"><div class="tx-amount">${fmt(it.total || 0)}</div></div>
       </div>`).join('') + `</div>`;
+  } else if (t.receipt_url) {
+    html += `<div style="font-size:13px; color:var(--text-secondary); background:var(--bg); border-radius:12px; padding:12px; margin-bottom:16px;">
+      Stavke sa računa nisu automatski očitane za ovu transakciju. Iznos je unet ručno ili automatska analiza nije uspela.
+    </div>`;
   }
   if (t.receipt_url) {
     html += `<a href="${t.receipt_url}" target="_blank" style="display:block; text-align:center; color:var(--accent); font-size:14px; font-weight:600; padding:8px;">🔗 Otvori i proveri na Poreskoj upravi</a>`;

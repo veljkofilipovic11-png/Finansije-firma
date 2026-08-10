@@ -146,7 +146,7 @@ window.addEventListener('unhandledrejection', function (e) {
   [data-theme="dark"] nav.tabbar { background:rgba(28,28,30,0.94); }
   nav.tabbar button { background:none; border:none; display:flex; flex-direction:column; align-items:center;
     gap:2px; font-size:9px; color:var(--text-secondary); font-weight:500; padding:4px 6px; font-family:inherit; }
-  nav.tabbar button .ic { font-size:19px; }
+  nav.tabbar button svg { width:21px; height:21px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; margin-bottom:1px; }
   nav.tabbar button.active { color:var(--accent); }
 
   .fab { position:fixed; bottom:calc(72px + env(safe-area-inset-bottom)); left:50%;
@@ -340,12 +340,24 @@ window.addEventListener('unhandledrejection', function (e) {
   <button class="fab" id="fab-add">＋</button>
 
   <nav class="tabbar">
-    <button class="tab active" data-tab="dashboard"><span class="ic">🏠</span>Dashboard</button>
-    <button class="tab" data-tab="history"><span class="ic">📋</span>Sve</button>
-    <button class="tab" data-tab="stats"><span class="ic">📊</span>Statistika</button>
-    <button class="tab" data-tab="categories"><span class="ic">🏷️</span>Kat.</button>
-    <button class="tab" data-tab="salary"><span class="ic">💰</span>Plata</button>
-    <button class="tab" data-tab="settings"><span class="ic">⚙️</span>Podeš.</button>
+    <button class="tab active" data-tab="dashboard">
+      <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/></svg>Dashboard
+    </button>
+    <button class="tab" data-tab="history">
+      <svg viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="0.5" fill="currentColor" stroke="none"/></svg>Sve
+    </button>
+    <button class="tab" data-tab="stats">
+      <svg viewBox="0 0 24 24"><line x1="5" y1="20" x2="5" y2="12"/><line x1="12" y1="20" x2="12" y2="6"/><line x1="19" y1="20" x2="19" y2="15"/></svg>Statistika
+    </button>
+    <button class="tab" data-tab="categories">
+      <svg viewBox="0 0 24 24"><path d="M12 3h6a2 2 0 0 1 2 2v6L11.5 20.5a2 2 0 0 1-2.8 0l-6.2-6.2a2 2 0 0 1 0-2.8L12 3z"/><circle cx="16" cy="8" r="1.3" fill="currentColor" stroke="none"/></svg>Kat.
+    </button>
+    <button class="tab" data-tab="salary">
+      <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="17" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg>Plata
+    </button>
+    <button class="tab" data-tab="settings">
+      <svg viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2" fill="currentColor" stroke="none"/></svg>Podeš.
+    </button>
   </nav>
 </div>
 
@@ -490,6 +502,13 @@ window.addEventListener('unhandledrejection', function (e) {
   <div class="field-group">
     <div class="field-label">IZNOS</div>
     <input type="text" inputmode="decimal" class="amount-input" id="salary-amount-input" placeholder="0" />
+  </div>
+  <div class="field-group">
+    <div class="field-label">NAČIN ISPLATE</div>
+    <div class="seg" id="salary-payment-seg">
+      <button class="active" data-payment="account">💳 Račun</button>
+      <button data-payment="cash">💵 Keš</button>
+    </div>
   </div>
   <div class="field-group">
     <div class="field-label">DATUM</div>
@@ -1403,14 +1422,23 @@ function salaryRowHTML(p) {
 }
 
 $('#add-salary-btn').addEventListener('click', openSalarySheet);
+let currentSalaryPayment = 'account';
 function openSalarySheet() {
   $('#salary-recipient-input').value = '';
   $('#salary-amount-input').value = '';
   $('#salary-note-input').value = '';
   $('#salary-date-input').value = todayISO();
+  currentSalaryPayment = 'account';
+  $$('#salary-payment-seg button').forEach(b=>b.classList.remove('active'));
+  $('#salary-payment-seg button[data-payment="account"]').classList.add('active');
   validateSalaryForm();
   $('#salary-overlay').classList.add('show'); $('#salary-sheet').classList.add('show');
 }
+$('#salary-payment-seg').addEventListener('click', (e) => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  $$('#salary-payment-seg button').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+  currentSalaryPayment = btn.dataset.payment;
+});
 function closeSalarySheet() { $('#salary-overlay').classList.remove('show'); $('#salary-sheet').classList.remove('show'); }
 $('#salary-cancel').addEventListener('click', closeSalarySheet);
 $('#salary-overlay').addEventListener('click', closeSalarySheet);
@@ -1420,22 +1448,49 @@ function validateSalaryForm() {
   const amount = parseFloat(($('#salary-amount-input').value||'').replace(',','.'));
   $('#salary-save-btn').disabled = !(amount > 0 && $('#salary-recipient-input').value.trim());
 }
+
+// Osiguraj da postoji kategorija "Plata" (rashod) za automatski povezane transakcije
+async function ensureSalaryCategory() {
+  let existing = categories.find(c => c.type === 'expense' && c.name === 'Plata');
+  if (existing) return existing.id;
+  const { data, error } = await client.from('categories').insert({ name: 'Plata', type: 'expense', icon: '💰', color: '#34C759' }).select().single();
+  if (error) throw error;
+  categories.push(data);
+  return data.id;
+}
+
 $('#salary-save-btn').addEventListener('click', async () => {
   const recipient = $('#salary-recipient-input').value.trim();
   const amount = parseFloat($('#salary-amount-input').value.replace(',','.'));
   if (!recipient || !(amount > 0)) return;
   const { data: { user } } = await client.auth.getUser();
+  const date = $('#salary-date-input').value || todayISO();
+  const note = $('#salary-note-input').value.trim() || null;
   const payload = {
-    recipient_name: recipient, amount,
-    date: $('#salary-date-input').value || todayISO(),
-    note: $('#salary-note-input').value.trim() || null,
+    recipient_name: recipient, amount, date, note,
     created_by: user ? user.id : null, created_by_name: currentUserName
   };
   $('#salary-save-btn').disabled = true; $('#salary-save-btn').textContent = 'Čuvanje...';
   try {
     const { error } = await client.from('salary_payouts').insert(payload);
     if (error) throw error;
+
+    // Automatski kreiraj i odgovarajuću transakciju (rashod) da se plata vidi
+    // i u Dashboard-u/Istoriji/Statistici kao svaki drugi rashod.
+    try {
+      const catId = await ensureSalaryCategory();
+      await client.from('transactions').insert({
+        amount, type: 'expense', category_id: catId, payment_method: currentSalaryPayment,
+        date, description: 'Isplata: ' + recipient + (note ? ' — ' + note : ''),
+        created_by: user ? user.id : null, created_by_name: currentUserName
+      });
+    } catch (txErr) {
+      console.error('Isplata sačuvana, ali povezana transakcija nije uspela:', txErr);
+      toast('⚠️ Isplata sačuvana, ali nije upisana u transakcije: ' + (txErr.message || ''));
+    }
+
     closeSalarySheet(); toast('✓ Isplata sačuvana');
+    fetchTransactions();
   } catch (e) { toast('⚠️ Greška: ' + (e.message || 'čuvanje nije uspelo') + ' (proveri migraciju v5)'); }
   finally { $('#salary-save-btn').textContent = 'Sačuvaj isplatu'; $('#salary-save-btn').disabled = false; }
 });
@@ -1525,42 +1580,93 @@ $('#import-json-input')?.addEventListener('change', async (e) => {
 });
 
 // ---------- PDF: STANJE NA DAN ----------
+// jsPDF ugrađeni fontovi ne podržavaju č/ć/š/ž/đ (ni ćirilicu) — slova bi
+// nedostajala ili se pogrešno prikazivala. Zato tekst za PDF transliterišemo
+// u čist ASCII, da ništa ne nedostaje ni izgleda pokvareno.
+const PDF_CHAR_MAP = {
+  'č':'c','ć':'c','š':'s','ž':'z','đ':'dj','Č':'C','Ć':'C','Š':'S','Ž':'Z','Đ':'Dj',
+  'а':'a','б':'b','в':'v','г':'g','д':'d','ђ':'dj','е':'e','ж':'z','з':'z','и':'i','ј':'j',
+  'к':'k','л':'l','љ':'lj','м':'m','н':'n','њ':'nj','о':'o','п':'p','р':'r','с':'s','т':'t',
+  'ћ':'c','у':'u','ф':'f','х':'h','ц':'c','ч':'c','џ':'dz','ш':'s',
+  'А':'A','Б':'B','В':'V','Г':'G','Д':'D','Ђ':'Dj','Е':'E','Ж':'Z','З':'Z','И':'I','Ј':'J',
+  'К':'K','Л':'L','Љ':'Lj','М':'M','Н':'N','Њ':'Nj','О':'O','П':'P','Р':'R','С':'S','Т':'T',
+  'Ћ':'C','У':'U','Ф':'F','Х':'H','Ц':'C','Ч':'C','Џ':'Dz','Ш':'S'
+};
+function pdfSafe(text) {
+  return String(text).split('').map(ch => PDF_CHAR_MAP[ch] || ch).join('');
+}
+
 $('#export-pdf-btn')?.addEventListener('click', () => {
   try {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     const now = new Date();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
     const balance = computeBalance(transactions);
     const cashBalance = computeBalance(transactions.filter(t=>t.payment_method==='cash'));
     const accountBalance = computeBalance(transactions.filter(t=>t.payment_method!=='cash'));
 
-    doc.setFontSize(18); doc.text(companyName, 14, 20);
-    doc.setFontSize(13); doc.text('Stanje na dan: ' + now.toLocaleDateString('sr-RS'), 14, 30);
-    doc.setFontSize(9); doc.setTextColor(120);
-    doc.text('Izveštaj generisan: ' + now.toLocaleDateString('sr-RS') + ' u ' + now.toLocaleTimeString('sr-RS'), 14, 37);
-    doc.setTextColor(0);
+    const sum = (list) => list.reduce((s,t)=>s+Number(t.amount),0);
+    const totalIncome = sum(transactions.filter(t=>t.type==='income'));
+    const totalIncomeCash = sum(transactions.filter(t=>t.type==='income' && t.payment_method==='cash'));
+    const totalIncomeAccount = sum(transactions.filter(t=>t.type==='income' && t.payment_method!=='cash'));
+    const totalExpense = sum(transactions.filter(t=>t.type==='expense'));
+    const totalExpenseCash = sum(transactions.filter(t=>t.type==='expense' && t.payment_method==='cash'));
+    const totalExpenseAccount = sum(transactions.filter(t=>t.type==='expense' && t.payment_method!=='cash'));
 
-    let y = 50;
-    doc.setFontSize(12);
-    doc.text('Trenutni bilans: ' + fmt(balance), 14, y); y += 8;
-    doc.text('Keš: ' + fmt(cashBalance), 14, y); y += 8;
-    doc.text('Račun: ' + fmt(accountBalance), 14, y); y += 14;
+    // Zaglavlje sa akcentnom bojom
+    doc.setFillColor(0, 122, 255);
+    doc.rect(0, 0, pageWidth, 38, 'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(19); doc.setFont(undefined, 'bold');
+    doc.text(pdfSafe(companyName), 14, 18);
+    doc.setFontSize(11); doc.setFont(undefined, 'normal');
+    doc.text(pdfSafe('Stanje na dan: ' + now.toLocaleDateString('sr-RS')), 14, 27);
+    doc.setFontSize(8);
+    doc.text(pdfSafe('Izvestaj generisan: ' + now.toLocaleDateString('sr-RS') + ' u ' + now.toLocaleTimeString('sr-RS')), 14, 33);
 
-    const monthTx = transactions.filter(t => isThisMonth(t.date));
-    function section(title, list) {
-      doc.setFontSize(13); doc.text(title, 14, y); y += 8;
-      doc.setFontSize(10);
-      if (!Object.keys(list).length) { doc.text('Nema podataka', 14, y); y += 6; }
-      Object.entries(list).sort((a,b)=>b[1]-a[1]).forEach(([name, amt]) => {
-        doc.text(name + ': ' + fmt(amt), 14, y); y += 6;
-        if (y > 270) { doc.addPage(); y = 20; }
-      });
-      y += 8;
+    doc.setTextColor(30,30,30);
+    let y = 52;
+
+    function rowLine(label, value, big) {
+      doc.setFont(undefined, big ? 'bold' : 'normal');
+      doc.setFontSize(big ? 14 : 11);
+      doc.text(pdfSafe(label), 14, y);
+      doc.text(pdfSafe(value), pageWidth - 14, y, { align: 'right' });
+      y += big ? 10 : 8;
     }
-    const expByCat = {}; monthTx.filter(t=>t.type==='expense').forEach(t => { const c=catById(t.category_id); const n=c?c.name:'Bez kategorije'; expByCat[n]=(expByCat[n]||0)+Number(t.amount); });
-    const incByCat = {}; monthTx.filter(t=>t.type==='income').forEach(t => { const c=catById(t.category_id); const n=c?c.name:'Bez kategorije'; incByCat[n]=(incByCat[n]||0)+Number(t.amount); });
-    section('Rashodi po kategoriji (mesec)', expByCat);
-    section('Prihodi po kategoriji (mesec)', incByCat);
+    function sectionDivider() {
+      doc.setDrawColor(220,220,220);
+      doc.line(14, y, pageWidth - 14, y);
+      y += 10;
+    }
+    function sectionTitle(t) {
+      doc.setFontSize(12); doc.setFont(undefined, 'bold'); doc.setTextColor(0,122,255);
+      doc.text(pdfSafe(t), 14, y);
+      doc.setTextColor(30,30,30);
+      y += 9;
+    }
+
+    sectionTitle('Trenutni bilans');
+    rowLine('Ukupno', fmt(balance), true);
+    rowLine('Kes', fmt(cashBalance));
+    rowLine('Racun', fmt(accountBalance));
+    y += 4; sectionDivider();
+
+    sectionTitle('Ukupan prihod do danas');
+    rowLine('Ukupno', fmt(totalIncome), true);
+    rowLine('Kes', fmt(totalIncomeCash));
+    rowLine('Racun', fmt(totalIncomeAccount));
+    y += 4; sectionDivider();
+
+    sectionTitle('Ukupan rashod do danas');
+    rowLine('Ukupno', fmt(totalExpense), true);
+    rowLine('Kes', fmt(totalExpenseCash));
+    rowLine('Racun', fmt(totalExpenseAccount));
+
+    doc.setFontSize(8); doc.setTextColor(150,150,150);
+    doc.text(pdfSafe(companyName + ' - automatski generisan izvestaj'), 14, doc.internal.pageSize.getHeight() - 10);
 
     doc.save('stanje-' + todayISO() + '.pdf');
     toast('✓ PDF preuzet');

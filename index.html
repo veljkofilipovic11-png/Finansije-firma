@@ -1010,11 +1010,11 @@ async function analyzeReceipt(url) {
       let debugText = 'REZULTAT ANALIZE:\nRazlog: ' + reason + '\nDijagnostika: ' + (data?._diag || '—');
       if (data && data._rawTextPreview) debugText += '\n\nPročitan tekst sa stranice (prvih 800 znakova):\n' + data._rawTextPreview;
       if (data && data._allAttempts) {
-        debugText += '\n\n--- SVI POKUŠANI ENDPOINT-I ---';
+        debugText += '\n\n--- SVI POKUŠANI POZIVI ---';
         data._allAttempts.forEach((a, i) => {
-          debugText += '\n\n[' + (i+1) + '] ' + a.url;
+          debugText += '\n\n[' + (i+1) + '] ' + (a.label || a.url || '');
           if (a.error) debugText += '\nGREŠKA: ' + a.error;
-          else debugText += '\nStatus: ' + a.status + ' | Content-Type: ' + a.contentType + '\nPreview: ' + (a.bodyPreview || '').slice(0, 200);
+          else debugText += '\nStatus: ' + a.status + ' | Content-Type: ' + a.contentType + '\nPreview: ' + (a.bodyPreview || '').slice(0, 300);
         });
       }
       logDebug(debugText);

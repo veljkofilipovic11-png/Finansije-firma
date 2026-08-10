@@ -354,6 +354,9 @@
     </div>
     <button class="save-btn" id="manual-confirm-btn">Prebaci u formu za unos</button>
   </div>
+
+  <div id="debug-log" style="display:none; margin-top:16px; background:var(--bg); border-radius:12px; padding:12px; font-family:ui-monospace,monospace; font-size:11px; color:var(--text); white-space:pre-wrap; user-select:text; max-height:220px; overflow-y:auto;"></div>
+  <button class="save-btn" id="debug-continue-btn" style="display:none;">Nastavi — unesi iznos ručno</button>
 </div>
 
 <!-- ADD/EDIT CATEGORY SHEET -->
@@ -818,6 +821,8 @@ $('#scan-qr-btn').addEventListener('click', openQrSheet);
 function openQrSheet() {
   $('#qr-manual-form').style.display = 'none';
   $('#qr-mode-camera').style.display = 'block';
+  $('#debug-log').style.display = 'none'; $('#debug-log').textContent = '';
+  $('#debug-continue-btn').style.display = 'none';
   $('#qr-overlay').classList.add('show'); $('#qr-sheet').classList.add('show');
   startQrScan();
 }
@@ -935,9 +940,12 @@ function handleReceiptUrl(url) {
   $('#receipt-attached').style.display = 'block';
   $('#receipt-link-preview').href = receiptUrl;
   if (!$('#desc-input').value) $('#desc-input').value = 'Fiskalni račun';
-  closeQrSheet();
-  openSheetIfClosed();
-  analyzeReceipt(receiptUrl);
+  stopQrScan();
+  $('#qr-mode-camera').style.display = 'none';
+  analyzeReceipt(url).then((ok) => {
+    if (ok) { closeQrSheet(); openSheetIfClosed(); }
+    else { $('#debug-continue-btn').style.display = 'block'; }
+  });
 }
 
 // Ručni unos (bez kamere/QR-a)
@@ -972,11 +980,21 @@ function openSheetIfClosed() {
   }
 }
 
+function logDebug(msg) {
+  const el = $('#debug-log');
+  el.style.display = 'block';
+  el.textContent = (typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2));
+  $('#qr-overlay').classList.add('show'); $('#qr-sheet').classList.add('show');
+}
+
 async function analyzeReceipt(url) {
   toast('🔎 Analiziram račun...');
   try {
-    const { data, error } = await client.functions.invoke('parse-receipt', { body: { url } });
-    if (error) throw error;
+    const { data, error } = await client.functions.invoke('purse-receipt', { body: { url } });
+    if (error) {
+      logDebug('GREŠKA PRI POZIVU FUNKCIJE:\n' + (error.message || String(error)) + (error.context ? '\n\nContext status: ' + error.context.status : ''));
+      throw error;
+    }
     if (data && data.success) {
       receiptItems = data.items || [];
       receiptShop = data.metadata?.shopFullName || receiptShop;
@@ -985,19 +1003,32 @@ async function analyzeReceipt(url) {
         $('#desc-input').value = receiptShop;
       }
       toast('✓ Račun očitan — iznos: ' + fmt(data.totalAmount) + ' — proveri i sačuvaj');
+      validateForm();
+      return true;
     } else {
       const reason = (data && data.message) ? data.message : 'nepoznat razlog';
-      const diag = (data && data._diag) ? ' [' + data._diag + ']' : '';
-      console.log('parse-receipt dijagnostika:', data);
-      if (data && data._rawTextPreview) console.log('Pročitan tekst sa stranice:', data._rawTextPreview);
-      toast('⚠️ Nije uspelo: ' + reason + diag + ' (detalji u konzoli)');
+      let debugText = 'REZULTAT ANALIZE:\nRazlog: ' + reason + '\nDijagnostika: ' + (data?._diag || '—');
+      if (data && data._rawTextPreview) debugText += '\n\nPročitan tekst sa stranice (prvih 800 znakova):\n' + data._rawTextPreview;
+      logDebug(debugText);
+      toast('⚠️ Automatska analiza nije uspela — vidi detalje ispod');
+      validateForm();
+      return false;
     }
   } catch (e) {
-    console.error('parse-receipt greška:', e);
-    toast('⚠️ Automatska analiza nedostupna — unesi iznos ručno. (Detalji u konzoli / Edge Function logovima)');
+    if (!$('#debug-log').textContent) {
+      logDebug('IZUZETAK:\n' + (e && e.message ? e.message : String(e)));
+    }
+    toast('⚠️ Poziv funkcije nije uspeo — vidi detalje ispod');
+    validateForm();
+    return false;
   }
-  validateForm();
 }
+$('#debug-continue-btn').addEventListener('click', () => {
+  closeQrSheet();
+  openSheetIfClosed();
+  $('#debug-log').style.display = 'none'; $('#debug-log').textContent = '';
+  $('#debug-continue-btn').style.display = 'none';
+});
 
 // ---------- DETALJI TRANSAKCIJE ----------
 document.addEventListener('click', (e) => {

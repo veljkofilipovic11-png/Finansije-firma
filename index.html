@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Firma — Finansije</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script>
 function showErrorBanner(text) {
   var box = document.createElement('div');
@@ -38,7 +41,7 @@ window.addEventListener('unhandledrejection', function (e) {
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; height:100%; background:var(--bg); color:var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     overscroll-behavior-y: none; transition: background 0.2s, color 0.2s; }
   #app, #login { max-width:480px; margin:0 auto; min-height:100vh; position:relative; }
   #app { padding-bottom: calc(84px + env(safe-area-inset-bottom)); display:none; }
@@ -200,6 +203,17 @@ window.addEventListener('unhandledrejection', function (e) {
 
   #qr-video { width:100%; border-radius:16px; background:#000; }
   #qr-canvas { display:none; }
+
+  /* Moderna uppercase tipografija — naslovi, dugmad, labele, nazivi (ne diramo opise/iznose/imena radi čitljivosti) */
+  .section-title, .save-btn, .secondary-btn, .sheet-header h2, header.top h1, .seg button,
+  .chip, .cat-option .nm, .tx-info .cat, .stat-bar-row .head .name, .add-cat-btn,
+  nav.tabbar button, .cat-row .nm, .balance-card .label, .tile .t-label, .field-label {
+    text-transform: uppercase;
+    letter-spacing: 0.035em;
+  }
+  header.top h1 { font-weight: 800; }
+  .section-title { font-weight: 800; }
+  .save-btn, .secondary-btn { font-weight: 700; }
 </style>
 </head>
 <body>
@@ -334,6 +348,7 @@ window.addEventListener('unhandledrejection', function (e) {
       <input type="file" id="import-json-input" accept="application/json" style="display:none;">
       <button class="secondary-btn" id="import-json-btn">⬆️ Uvezi podatke (JSON)</button>
       <button class="secondary-btn" id="export-pdf-btn">📄 Preuzmi stanje na dan (PDF)</button>
+      <button class="secondary-btn" id="open-trash-btn">🗑️ Otpad (obrisano)</button>
     </div>
   </section>
 
@@ -367,7 +382,7 @@ window.addEventListener('unhandledrejection', function (e) {
   <div class="sheet-handle"></div>
   <div class="sheet-header">
     <button class="cancel" id="sheet-cancel">Otkaži</button>
-    <h2>Nova transakcija</h2>
+    <h2 id="add-sheet-title">Nova transakcija</h2>
     <div style="width:50px;"></div>
   </div>
 
@@ -485,7 +500,21 @@ window.addEventListener('unhandledrejection', function (e) {
 
 <div class="toast" id="toast"></div>
 
-<!-- SALARY PAYOUT SHEET -->
+<!-- TRASH SHEET (samo za pregled — ništa se odavde ne može trajno ukloniti) -->
+<div class="sheet-overlay" id="trash-overlay"></div>
+<div class="sheet" id="trash-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <button class="cancel" id="trash-close">Zatvori</button>
+    <h2>Otpad</h2>
+    <div style="width:50px;"></div>
+  </div>
+  <p style="font-size:12px; color:var(--text-secondary); margin-top:0;">Trajni arhiv obrisanih stavki — zaštita od zloupotrebe. Ništa se odavde ne može ukloniti.</p>
+  <div class="section-title" style="margin-top:8px;">Obrisane transakcije</div>
+  <div class="card-list" style="margin-bottom:16px;" id="trash-transactions-list"></div>
+  <div class="section-title">Obrisane isplate</div>
+  <div class="card-list" id="trash-salary-list"></div>
+</div>
 <div class="sheet-overlay" id="salary-overlay"></div>
 <div class="sheet" id="salary-sheet">
   <div class="sheet-handle"></div>
@@ -734,6 +763,7 @@ async function deleteCategoryFromDB(id) {
 // ---------- DATA: TRANSACTIONS ----------
 async function fetchTransactions(silent) {
   const { data, error } = await client.from('transactions').select('*')
+    .is('deleted_at', null)
     .order('date', { ascending:false }).order('created_at', { ascending:false });
   if (error) { setStatus('error', 'Greška pri učitavanju'); console.error(error); return; }
   transactions = data || [];
@@ -979,6 +1009,9 @@ $('#cat-save-btn').addEventListener('click', async () => {
 function openSheet() {
   $('#date-input').value = todayISO();
   receiptUrl = null;
+  editingTransactionId = null;
+  $('#add-sheet-title').textContent = 'Nova transakcija';
+  $('#save-btn').textContent = 'Sačuvaj';
   $('#receipt-attached').style.display = 'none';
   renderCategoryPickers();
   $('#overlay').classList.add('show'); $('#add-sheet').classList.add('show');
@@ -986,6 +1019,9 @@ function openSheet() {
 function closeSheet() {
   $('#overlay').classList.remove('show'); $('#add-sheet').classList.remove('show');
   $('#amount-input').value=''; $('#desc-input').value=''; selectedCategoryId=null; currentType='expense'; currentPayment='account'; receiptUrl=null; receiptItems=null; receiptShop=null;
+  editingTransactionId = null;
+  $('#add-sheet-title').textContent = 'Nova transakcija';
+  $('#save-btn').textContent = 'Sačuvaj';
   $$('#type-seg button').forEach(b=>b.classList.remove('active')); $('#type-seg button[data-type="expense"]').classList.add('active');
   $$('#payment-seg button').forEach(b=>b.classList.remove('active')); $('#payment-seg button[data-payment="account"]').classList.add('active');
   validateForm();
@@ -1027,20 +1063,41 @@ $('#save-btn').addEventListener('click', async () => {
   const amount = parseFloat($('#amount-input').value.replace(',','.'));
   if (!(amount > 0) || !selectedCategoryId) return;
   const { data: { user } } = await client.auth.getUser();
-  const newTx = {
+  const txData = {
     amount, type: currentType, category_id: selectedCategoryId, payment_method: currentPayment,
     date: $('#date-input').value || todayISO(),
     description: $('#desc-input').value.trim() || null,
-    created_by: user ? user.id : null, created_by_name: currentUserName,
     receipt_url: receiptUrl, receipt_items: receiptItems, receipt_shop: receiptShop
   };
+
   $('#save-btn').disabled = true; $('#save-btn').textContent = 'Čuvanje...';
   try {
-    const result = await addTransactionToDB(newTx);
-    closeSheet();
-    toast(result.warning ? '⚠️ ' + result.warning : '✓ Sačuvano');
-  } catch (err) { toast('⚠️ Greška: ' + (err.message || 'čuvanje nije uspelo')); console.error(err); }
-  finally { $('#save-btn').textContent = 'Sačuvaj'; $('#save-btn').disabled = false; }
+    if (editingTransactionId) {
+      // Sačuvaj snapshot STARE verzije pre izmene, radi istorije
+      const oldTx = transactions.find(t => t.id === editingTransactionId);
+      if (oldTx) {
+        await client.from('transaction_edits').insert({
+          transaction_id: editingTransactionId,
+          edited_by_name: currentUserName,
+          previous_data: {
+            amount: oldTx.amount, type: oldTx.type, category_id: oldTx.category_id,
+            payment_method: oldTx.payment_method, date: oldTx.date, description: oldTx.description
+          }
+        });
+      }
+      const { error } = await client.from('transactions').update(txData).eq('id', editingTransactionId);
+      if (error) throw error;
+      closeSheet();
+      toast('✓ Izmene sačuvane');
+    } else {
+      const newTx = { ...txData, created_by: user ? user.id : null, created_by_name: currentUserName };
+      const result = await addTransactionToDB(newTx);
+      closeSheet();
+      toast(result.warning ? '⚠️ ' + result.warning : '✓ Sačuvano');
+    }
+    fetchTransactions();
+  } catch (err) { toast('⚠️ Greška: ' + (err.message || 'čuvanje nije uspelo') + (editingTransactionId ? ' (proveri migraciju v6)' : '')); console.error(err); }
+  finally { $('#save-btn').textContent = editingTransactionId ? 'Sačuvaj izmene' : 'Sačuvaj'; $('#save-btn').disabled = false; }
 });
 
 // ---------- QR SKENER: kamera, upload slike, ručni unos ----------
@@ -1314,7 +1371,7 @@ document.addEventListener('click', (e) => {
   if (!row) return;
   openTxDetails(row.dataset.txId);
 });
-function openTxDetails(id) {
+async function openTxDetails(id) {
   const t = transactions.find(tx => tx.id === id);
   if (!t) return;
   const cat = catById(t.category_id);
@@ -1350,18 +1407,97 @@ function openTxDetails(id) {
   if (t.receipt_url) {
     html += `<a href="${t.receipt_url}" target="_blank" style="display:block; text-align:center; color:var(--accent); font-size:14px; font-weight:600; padding:8px;">🔗 Otvori i proveri na Poreskoj upravi</a>`;
   }
+
+  html += `
+    <div style="display:flex; gap:10px; margin-top:16px;">
+      <button class="secondary-btn" id="detail-edit-btn" style="margin-top:0;">✏️ Izmeni</button>
+      <button class="secondary-btn" id="detail-delete-btn" style="margin-top:0; color:var(--red);">🗑️ Obriši</button>
+    </div>
+    <div id="detail-history-container"></div>`;
+
   $('#detail-content').innerHTML = html;
   $('#detail-overlay').classList.add('show'); $('#detail-sheet').classList.add('show');
+
+  $('#detail-edit-btn').addEventListener('click', () => { closeDetailSheet(); openEditTransaction(t); });
+  $('#detail-delete-btn').addEventListener('click', () => softDeleteTransaction(t.id));
+
+  // Istorija izmena (učitava se asinhrono, nakon prikaza osnovnih podataka)
+  loadTransactionHistory(t.id);
 }
-$('#detail-close').addEventListener('click', () => { $('#detail-overlay').classList.remove('show'); $('#detail-sheet').classList.remove('show'); });
-$('#detail-overlay').addEventListener('click', () => { $('#detail-overlay').classList.remove('show'); $('#detail-sheet').classList.remove('show'); });
+function closeDetailSheet() { $('#detail-overlay').classList.remove('show'); $('#detail-sheet').classList.remove('show'); }
+$('#detail-close').addEventListener('click', closeDetailSheet);
+$('#detail-overlay').addEventListener('click', closeDetailSheet);
+
+async function loadTransactionHistory(txId) {
+  const { data, error } = await client.from('transaction_edits').select('*').eq('transaction_id', txId).order('edited_at', { ascending:false });
+  const container = $('#detail-history-container');
+  if (!container) return; // sheet je možda već zatvoren
+  if (error) { console.error('transaction_edits greška (proveri migraciju v6):', error); return; }
+  if (!data || !data.length) return;
+  let html = `<div class="section-title">Istorija izmena</div><div class="card-list">`;
+  html += data.map(edit => {
+    const d = edit.previous_data || {};
+    const when = new Date(edit.edited_at).toLocaleString('sr-RS');
+    const dCat = catById(d.category_id);
+    return `<div class="tx-row">
+        <div class="tx-info">
+          <div class="cat" style="font-size:13px;">Pre izmene · ${edit.edited_by_name || '—'}</div>
+          <div class="desc">${when}</div>
+          <div class="desc">Iznos: ${fmt(d.amount||0)} · ${dCat?dCat.name:'?'} · ${d.payment_method==='cash'?'Keš':'Račun'}</div>
+          <div class="desc">Opis: ${d.description || '—'}</div>
+        </div>
+      </div>`;
+  }).join('');
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+// ---------- IZMENA TRANSAKCIJE ----------
+let editingTransactionId = null;
+function openEditTransaction(t) {
+  editingTransactionId = t.id;
+  $('#add-sheet-title').textContent = 'Izmeni transakciju';
+  $('#save-btn').textContent = 'Sačuvaj izmene';
+
+  currentType = t.type;
+  currentPayment = t.payment_method || 'account';
+  selectedCategoryId = t.category_id;
+  receiptUrl = t.receipt_url || null;
+  receiptItems = t.receipt_items || null;
+  receiptShop = t.receipt_shop || null;
+
+  $$('#type-seg button').forEach(b => b.classList.toggle('active', b.dataset.type === currentType));
+  $$('#payment-seg button').forEach(b => b.classList.toggle('active', b.dataset.payment === currentPayment));
+  $('#amount-input').value = String(t.amount);
+  $('#date-input').value = t.date;
+  $('#desc-input').value = t.description || '';
+  $('#receipt-attached').style.display = receiptUrl ? 'block' : 'none';
+  if (receiptUrl) $('#receipt-link-preview').href = receiptUrl;
+
+  renderCategoryPickers();
+  validateForm();
+  $('#overlay').classList.add('show'); $('#add-sheet').classList.add('show');
+}
+
+async function softDeleteTransaction(id) {
+  if (!confirm('Obrisati ovu transakciju? Ostaje trajno vidljiva u Otpadu (Podešavanja) radi zaštite od zloupotrebe.')) return;
+  try {
+    const { error } = await client.from('transactions')
+      .update({ deleted_at: new Date().toISOString(), deleted_by_name: currentUserName })
+      .eq('id', id);
+    if (error) throw error;
+    closeDetailSheet();
+    toast('✓ Transakcija obrisana (vidljiva u Otpadu)');
+    fetchTransactions();
+  } catch (e) { toast('⚠️ Greška: ' + (e.message || 'brisanje nije uspelo') + ' (proveri migraciju v6)'); }
+}
 
 // ---------- PLATA (isplate) ----------
 let salaryPayouts = [];
 
 async function fetchSalaryPayouts() {
-  const { data, error } = await client.from('salary_payouts').select('*').order('date', { ascending:false }).order('created_at', { ascending:false });
-  if (error) { console.error('salary_payouts greška (proveri migraciju v5):', error); return; }
+  const { data, error } = await client.from('salary_payouts').select('*').is('deleted_at', null).order('date', { ascending:false }).order('created_at', { ascending:false });
+  if (error) { console.error('salary_payouts greška (proveri migraciju v5/v6):', error); return; }
   salaryPayouts = data || [];
   if ($('#screen-salary')?.classList.contains('active')) renderSalaryTab();
 }
@@ -1418,7 +1554,25 @@ function salaryRowHTML(p) {
         <div class="tx-amount income">${fmt(p.amount)}</div>
         <div class="tx-date">${dateLabel}</div>
       </div>
+      <button class="del-salary-btn" data-id="${p.id}" style="background:none; border:none; color:var(--red); font-size:16px; padding:4px 6px; margin-left:4px;">🗑️</button>
     </div>`;
+}
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.del-salary-btn');
+  if (!btn) return;
+  e.stopPropagation();
+  softDeleteSalary(btn.dataset.id);
+});
+async function softDeleteSalary(id) {
+  if (!confirm('Obrisati ovu isplatu? Ostaje trajno vidljiva u Otpadu (Podešavanja) radi zaštite od zloupotrebe. Napomena: povezana transakcija (rashod) ostaje nepromenjena — obriši je posebno ako treba.')) return;
+  try {
+    const { error } = await client.from('salary_payouts')
+      .update({ deleted_at: new Date().toISOString(), deleted_by_name: currentUserName })
+      .eq('id', id);
+    if (error) throw error;
+    toast('✓ Isplata obrisana (vidljiva u Otpadu)');
+    fetchSalaryPayouts();
+  } catch (e) { toast('⚠️ Greška: ' + (e.message || 'brisanje nije uspelo') + ' (proveri migraciju v6)'); }
 }
 
 $('#add-salary-btn').addEventListener('click', openSalarySheet);
@@ -1674,6 +1828,56 @@ $('#export-pdf-btn')?.addEventListener('click', () => {
     toast('⚠️ Greška pri generisanju PDF-a: ' + e.message);
   }
 });
+
+// ---------- OTPAD (Trash) ----------
+$('#open-trash-btn')?.addEventListener('click', openTrash);
+async function openTrash() {
+  $('#trash-overlay').classList.add('show'); $('#trash-sheet').classList.add('show');
+  $('#trash-transactions-list').innerHTML = '<div style="padding:16px; text-align:center; color:var(--text-secondary);">Učitavanje...</div>';
+  $('#trash-salary-list').innerHTML = '<div style="padding:16px; text-align:center; color:var(--text-secondary);">Učitavanje...</div>';
+
+  const [txRes, salRes] = await Promise.all([
+    client.from('transactions').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending:false }),
+    client.from('salary_payouts').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending:false })
+  ]);
+
+  if (txRes.error) { $('#trash-transactions-list').innerHTML = emptyStateHTML('Greška — proveri migraciju v6'); }
+  else {
+    const list = txRes.data || [];
+    $('#trash-transactions-list').innerHTML = list.length ? list.map(t => {
+      const cat = catById(t.category_id);
+      const when = new Date(t.deleted_at).toLocaleString('sr-RS');
+      return `<div class="tx-row">
+          <div class="tx-icon" style="background:${(cat?cat.color:'#8E8E93')}22;">${cat?cat.icon:'💳'}</div>
+          <div class="tx-info">
+            <div class="cat">${cat?cat.name:'Bez kategorije'}</div>
+            <div class="desc">${t.description||'—'}</div>
+            <div class="desc">Obrisao/la: ${t.deleted_by_name||'—'} · ${when}</div>
+          </div>
+          <div class="tx-meta"><div class="tx-amount ${t.type}">${t.type==='income'?'+':'−'} ${fmt(t.amount)}</div></div>
+        </div>`;
+    }).join('') : emptyStateHTML('Nema obrisanih transakcija');
+  }
+
+  if (salRes.error) { $('#trash-salary-list').innerHTML = emptyStateHTML('Greška — proveri migraciju v6'); }
+  else {
+    const list = salRes.data || [];
+    $('#trash-salary-list').innerHTML = list.length ? list.map(p => {
+      const when = new Date(p.deleted_at).toLocaleString('sr-RS');
+      return `<div class="tx-row">
+          <div class="tx-icon" style="background:#34C75922;">💰</div>
+          <div class="tx-info">
+            <div class="cat">${p.recipient_name}</div>
+            <div class="desc">${p.note||'—'}</div>
+            <div class="desc">Obrisao/la: ${p.deleted_by_name||'—'} · ${when}</div>
+          </div>
+          <div class="tx-meta"><div class="tx-amount income">${fmt(p.amount)}</div></div>
+        </div>`;
+    }).join('') : emptyStateHTML('Nema obrisanih isplata');
+  }
+}
+$('#trash-close')?.addEventListener('click', () => { $('#trash-overlay').classList.remove('show'); $('#trash-sheet').classList.remove('show'); });
+$('#trash-overlay')?.addEventListener('click', () => { $('#trash-overlay').classList.remove('show'); $('#trash-sheet').classList.remove('show'); });
 
 // ---------- INIT ----------
 (async () => {

@@ -939,7 +939,9 @@ async function analyzeReceipt(url) {
       toast('✓ Račun očitan (' + (data.items?.length || 0) + ' stavki) — proveri i sačuvaj');
     } else {
       const reason = (data && data.message) ? data.message : 'nepoznat razlog';
-      toast('⚠️ Automatska analiza nije uspela (' + reason + ') — unesi iznos ručno');
+      const diag = (data && data._diag) ? ' [' + data._diag + ']' : '';
+      console.log('parse-receipt dijagnostika:', data);
+      toast('⚠️ Nije uspelo: ' + reason + diag);
     }
   } catch (e) {
     console.error('parse-receipt greška:', e);

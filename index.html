@@ -349,6 +349,7 @@ window.addEventListener('unhandledrejection', function (e) {
       <button class="secondary-btn" id="import-json-btn">⬆️ Uvezi podatke (JSON)</button>
       <button class="secondary-btn" id="export-pdf-btn">📄 Preuzmi stanje na dan (PDF)</button>
       <button class="secondary-btn" id="open-trash-btn">🗑️ Otpad (obrisano)</button>
+      <button class="secondary-btn" id="open-edited-btn">📝 Izmenjene transakcije</button>
     </div>
   </section>
 
@@ -437,9 +438,13 @@ window.addEventListener('unhandledrejection', function (e) {
     <div style="width:50px;"></div>
   </div>
 
-  <div id="qr-mode-camera">
-    <p style="font-size:13px; color:var(--text-secondary); margin-top:0;">Usmeri kameru na QR kod u dnu fiskalnog računa.</p>
-    <video id="qr-video" playsinline></video>
+  <div id="qr-mode-camera" style="position:relative;">
+    <p style="font-size:13px; color:var(--text-secondary); margin-top:0;">Postavi QR kod unutar okvira, iz blizine, sa dobrim osvetljenjem.</p>
+    <div style="position:relative; overflow:hidden; border-radius:16px;">
+      <video id="qr-video" playsinline></video>
+      <div id="qr-guide" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:62%; aspect-ratio:1/1; border:3px solid rgba(255,255,255,0.85); border-radius:16px; box-shadow:0 0 0 999px rgba(0,0,0,0.35); pointer-events:none;"></div>
+      <button id="qr-torch-btn" style="display:none; position:absolute; bottom:10px; right:10px; background:rgba(0,0,0,0.55); color:white; border:none; border-radius:50%; width:40px; height:40px; font-size:18px;">🔦</button>
+    </div>
     <canvas id="qr-canvas" style="display:none;"></canvas>
   </div>
 
@@ -499,6 +504,19 @@ window.addEventListener('unhandledrejection', function (e) {
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- IZMENJENE TRANSAKCIJE SHEET -->
+<div class="sheet-overlay" id="edited-overlay"></div>
+<div class="sheet" id="edited-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <button class="cancel" id="edited-close">Zatvori</button>
+    <h2>Izmenjene transakcije</h2>
+    <div style="width:50px;"></div>
+  </div>
+  <p style="font-size:12px; color:var(--text-secondary); margin-top:0;">Tapni transakciju da vidiš punu istoriju izmena.</p>
+  <div class="card-list" id="edited-list"></div>
+</div>
 
 <!-- TRASH SHEET (samo za pregled — ništa se odavde ne može trajno ukloniti) -->
 <div class="sheet-overlay" id="trash-overlay"></div>
@@ -623,6 +641,7 @@ function renderThemeSwatches() {
   ).join('');
   $$('#theme-swatches .theme-swatch').forEach(el => el.addEventListener('click', () => {
     localStorage.setItem('themeColor', el.dataset.color);
+    localStorage.removeItem('custom_accent'); // ukloni prilagođenu akcentnu boju da klik na osnovnu boju stvarno radi
     applyTheme(); renderThemeSwatches();
   }));
   $('#dark-toggle').checked = localStorage.getItem('themeMode') === 'dark';
@@ -1120,10 +1139,31 @@ $('#qr-overlay').addEventListener('click', closeQrSheet);
 
 async function startQrScan() {
   try {
-    qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    qrStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1920 }, height: { ideal: 1080 }
+      }
+    });
     const video = $('#qr-video');
     video.srcObject = qrStream;
     await video.play();
+
+    // Pokušaj kontinuirani autofokus ako uređaj to podržava (ne pada ako ne uspe)
+    try {
+      const track = qrStream.getVideoTracks()[0];
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      const advanced = [];
+      if (caps.focusMode && caps.focusMode.includes('continuous')) advanced.push({ focusMode: 'continuous' });
+      if (advanced.length) await track.applyConstraints({ advanced });
+      // Baterijska lampa — prikaži dugme samo ako je uređaj podržava
+      if (caps.torch) {
+        $('#qr-torch-btn').style.display = 'flex';
+        $('#qr-torch-btn').style.alignItems = 'center';
+        $('#qr-torch-btn').style.justifyContent = 'center';
+      }
+    } catch (capErr) { /* nije podržano — nastavi bez toga */ }
+
     requestAnimationFrame(scanFrame);
   } catch (e) {
     console.error('Kamera nedostupna:', e);
@@ -1132,18 +1172,36 @@ async function startQrScan() {
     $('#qr-mode-camera').style.display = 'none';
   }
 }
+let torchOn = false;
+$('#qr-torch-btn').addEventListener('click', async () => {
+  if (!qrStream) return;
+  try {
+    const track = qrStream.getVideoTracks()[0];
+    torchOn = !torchOn;
+    await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+  } catch (e) { /* uređaj ipak ne podržava — tiho ignoriši */ }
+});
 function stopQrScan() {
   if (qrStream) { qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
+  torchOn = false;
+  $('#qr-torch-btn').style.display = 'none';
 }
 function scanFrame() {
   if (!qrStream) return;
   const video = $('#qr-video'), canvas = $('#qr-canvas');
   if (video.readyState === video.HAVE_ENOUGH_DATA) {
-    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    // "Digitalni zum": obradi samo centralni kvadrat (isti onaj koji vizuelni
+    // okvir pokazuje korisniku) — QR kod tamo zauzima veći deo slike, pa se
+    // čita pouzdanije, posebno na manjim/udaljenijim kodovima na računu.
+    const cropSize = Math.round(Math.min(vw, vh) * 0.62);
+    const sx = Math.round((vw - cropSize) / 2);
+    const sy = Math.round((vh - cropSize) / 2);
+    canvas.width = cropSize; canvas.height = cropSize;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    ctx.drawImage(video, sx, sy, cropSize, cropSize, 0, 0, cropSize, cropSize);
+    const imageData = ctx.getImageData(0, 0, cropSize, cropSize);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
     if (code && code.data && code.data.startsWith('http')) {
       handleReceiptUrl(code.data);
       return;
@@ -1164,7 +1222,7 @@ $('#qr-file-input').addEventListener('change', (e) => {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0);
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
     if (code && code.data && code.data.startsWith('http')) {
       handleReceiptUrl(code.data);
       return;
@@ -1372,7 +1430,11 @@ document.addEventListener('click', (e) => {
   openTxDetails(row.dataset.txId);
 });
 async function openTxDetails(id) {
-  const t = transactions.find(tx => tx.id === id);
+  let t = transactions.find(tx => tx.id === id);
+  if (!t) {
+    const { data } = await client.from('transactions').select('*').eq('id', id).maybeSingle();
+    t = data;
+  }
   if (!t) return;
   const cat = catById(t.category_id);
   const dateLabel = new Date(t.date).toLocaleDateString('sr-RS', { day:'numeric', month:'long', year:'numeric' });
@@ -1408,18 +1470,21 @@ async function openTxDetails(id) {
     html += `<a href="${t.receipt_url}" target="_blank" style="display:block; text-align:center; color:var(--accent); font-size:14px; font-weight:600; padding:8px;">🔗 Otvori i proveri na Poreskoj upravi</a>`;
   }
 
-  html += `
-    <div style="display:flex; gap:10px; margin-top:16px;">
+  html += t.deleted_at
+    ? `<div style="text-align:center; padding:10px; background:rgba(255,59,48,0.1); border-radius:12px; color:var(--red); font-size:13px; font-weight:600; margin-top:16px;">🗑️ Obrisano (${t.deleted_by_name||'—'}, ${new Date(t.deleted_at).toLocaleString('sr-RS')})</div>`
+    : `<div style="display:flex; gap:10px; margin-top:16px;">
       <button class="secondary-btn" id="detail-edit-btn" style="margin-top:0;">✏️ Izmeni</button>
       <button class="secondary-btn" id="detail-delete-btn" style="margin-top:0; color:var(--red);">🗑️ Obriši</button>
-    </div>
-    <div id="detail-history-container"></div>`;
+    </div>`;
+  html += `<div id="detail-history-container"></div>`;
 
   $('#detail-content').innerHTML = html;
   $('#detail-overlay').classList.add('show'); $('#detail-sheet').classList.add('show');
 
-  $('#detail-edit-btn').addEventListener('click', () => { closeDetailSheet(); openEditTransaction(t); });
-  $('#detail-delete-btn').addEventListener('click', () => softDeleteTransaction(t.id));
+  if (!t.deleted_at) {
+    $('#detail-edit-btn').addEventListener('click', () => { closeDetailSheet(); openEditTransaction(t); });
+    $('#detail-delete-btn').addEventListener('click', () => softDeleteTransaction(t.id));
+  }
 
   // Istorija izmena (učitava se asinhrono, nakon prikaza osnovnih podataka)
   loadTransactionHistory(t.id);
@@ -1480,16 +1545,23 @@ function openEditTransaction(t) {
 }
 
 async function softDeleteTransaction(id) {
-  if (!confirm('Obrisati ovu transakciju? Ostaje trajno vidljiva u Otpadu (Podešavanja) radi zaštite od zloupotrebe.')) return;
+  if (!confirm('Obrisati ovu transakciju? Ostaje trajno vidljiva u Otpadu (Podešavanja) radi zaštite od zloupotrebe. Ako je povezana sa isplatom u kartici Plata, obrisaće se i ona.')) return;
   try {
     const { error } = await client.from('transactions')
       .update({ deleted_at: new Date().toISOString(), deleted_by_name: currentUserName })
       .eq('id', id);
     if (error) throw error;
+
+    // Ako je ova transakcija povezana sa isplatom (kreirana iz kartice Plata), obriši i nju
+    const { data: linkedSalary } = await client.from('salary_payouts').select('id').eq('transaction_id', id).is('deleted_at', null).maybeSingle();
+    if (linkedSalary) {
+      await client.from('salary_payouts').update({ deleted_at: new Date().toISOString(), deleted_by_name: currentUserName }).eq('id', linkedSalary.id);
+    }
+
     closeDetailSheet();
-    toast('✓ Transakcija obrisana (vidljiva u Otpadu)');
-    fetchTransactions();
-  } catch (e) { toast('⚠️ Greška: ' + (e.message || 'brisanje nije uspelo') + ' (proveri migraciju v6)'); }
+    toast('✓ Transakcija obrisana' + (linkedSalary ? ' (i povezana isplata)' : ''));
+    fetchTransactions(); fetchSalaryPayouts();
+  } catch (e) { toast('⚠️ Greška: ' + (e.message || 'brisanje nije uspelo') + ' (proveri migraciju v6/v7)'); }
 }
 
 // ---------- PLATA (isplate) ----------
@@ -1564,15 +1636,21 @@ document.addEventListener('click', (e) => {
   softDeleteSalary(btn.dataset.id);
 });
 async function softDeleteSalary(id) {
-  if (!confirm('Obrisati ovu isplatu? Ostaje trajno vidljiva u Otpadu (Podešavanja) radi zaštite od zloupotrebe. Napomena: povezana transakcija (rashod) ostaje nepromenjena — obriši je posebno ako treba.')) return;
+  if (!confirm('Obrisati ovu isplatu? Ostaje trajno vidljiva u Otpadu (Podešavanja) radi zaštite od zloupotrebe. Povezana transakcija (rashod) će takođe biti obrisana.')) return;
   try {
+    const payout = salaryPayouts.find(p => p.id === id);
     const { error } = await client.from('salary_payouts')
       .update({ deleted_at: new Date().toISOString(), deleted_by_name: currentUserName })
       .eq('id', id);
     if (error) throw error;
-    toast('✓ Isplata obrisana (vidljiva u Otpadu)');
-    fetchSalaryPayouts();
-  } catch (e) { toast('⚠️ Greška: ' + (e.message || 'brisanje nije uspelo') + ' (proveri migraciju v6)'); }
+
+    if (payout && payout.transaction_id) {
+      await client.from('transactions').update({ deleted_at: new Date().toISOString(), deleted_by_name: currentUserName }).eq('id', payout.transaction_id);
+    }
+
+    toast('✓ Isplata obrisana' + (payout && payout.transaction_id ? ' (i povezana transakcija)' : ''));
+    fetchSalaryPayouts(); fetchTransactions();
+  } catch (e) { toast('⚠️ Greška: ' + (e.message || 'brisanje nije uspelo') + ' (proveri migraciju v6/v7)'); }
 }
 
 $('#add-salary-btn').addEventListener('click', openSalarySheet);
@@ -1620,32 +1698,36 @@ $('#salary-save-btn').addEventListener('click', async () => {
   const { data: { user } } = await client.auth.getUser();
   const date = $('#salary-date-input').value || todayISO();
   const note = $('#salary-note-input').value.trim() || null;
-  const payload = {
-    recipient_name: recipient, amount, date, note,
-    created_by: user ? user.id : null, created_by_name: currentUserName
-  };
+
   $('#salary-save-btn').disabled = true; $('#salary-save-btn').textContent = 'Čuvanje...';
+  let createdTxId = null;
   try {
+    // Prvo kreiraj povezanu transakciju (rashod), da bismo dobili njen id
+    const catId = await ensureSalaryCategory();
+    const { data: txRow, error: txError } = await client.from('transactions').insert({
+      amount, type: 'expense', category_id: catId, payment_method: currentSalaryPayment,
+      date, description: 'Isplata: ' + recipient + (note ? ' — ' + note : ''),
+      created_by: user ? user.id : null, created_by_name: currentUserName
+    }).select().single();
+    if (txError) throw txError;
+    createdTxId = txRow.id;
+
+    const payload = {
+      recipient_name: recipient, amount, date, note, transaction_id: createdTxId,
+      created_by: user ? user.id : null, created_by_name: currentUserName
+    };
     const { error } = await client.from('salary_payouts').insert(payload);
     if (error) throw error;
 
-    // Automatski kreiraj i odgovarajuću transakciju (rashod) da se plata vidi
-    // i u Dashboard-u/Istoriji/Statistici kao svaki drugi rashod.
-    try {
-      const catId = await ensureSalaryCategory();
-      await client.from('transactions').insert({
-        amount, type: 'expense', category_id: catId, payment_method: currentSalaryPayment,
-        date, description: 'Isplata: ' + recipient + (note ? ' — ' + note : ''),
-        created_by: user ? user.id : null, created_by_name: currentUserName
-      });
-    } catch (txErr) {
-      console.error('Isplata sačuvana, ali povezana transakcija nije uspela:', txErr);
-      toast('⚠️ Isplata sačuvana, ali nije upisana u transakcije: ' + (txErr.message || ''));
-    }
-
     closeSalarySheet(); toast('✓ Isplata sačuvana');
-    fetchTransactions();
-  } catch (e) { toast('⚠️ Greška: ' + (e.message || 'čuvanje nije uspelo') + ' (proveri migraciju v5)'); }
+    fetchTransactions(); fetchSalaryPayouts();
+  } catch (e) {
+    // Ako je transakcija kreirana ali isplata nije uspela, obriši (meko) tu transakciju da ne ostane siroče
+    if (createdTxId) {
+      client.from('transactions').update({ deleted_at: new Date().toISOString(), deleted_by_name: currentUserName }).eq('id', createdTxId).then(() => fetchTransactions());
+    }
+    toast('⚠️ Greška: ' + (e.message || 'čuvanje nije uspelo') + ' (proveri migraciju v5/v7)');
+  }
   finally { $('#salary-save-btn').textContent = 'Sačuvaj isplatu'; $('#salary-save-btn').disabled = false; }
 });
 
@@ -1828,6 +1910,46 @@ $('#export-pdf-btn')?.addEventListener('click', () => {
     toast('⚠️ Greška pri generisanju PDF-a: ' + e.message);
   }
 });
+
+// ---------- IZMENJENE TRANSAKCIJE (globalni pregled) ----------
+$('#open-edited-btn')?.addEventListener('click', openEditedList);
+async function openEditedList() {
+  $('#edited-overlay').classList.add('show'); $('#edited-sheet').classList.add('show');
+  $('#edited-list').innerHTML = '<div style="padding:16px; text-align:center; color:var(--text-secondary);">Učitavanje...</div>';
+
+  const { data, error } = await client.from('transaction_edits').select('*').order('edited_at', { ascending:false });
+  if (error) { $('#edited-list').innerHTML = emptyStateHTML('Greška — proveri migraciju v6'); return; }
+  if (!data || !data.length) { $('#edited-list').innerHTML = emptyStateHTML('Nema izmenjenih transakcija'); return; }
+
+  const grouped = {};
+  data.forEach(e => {
+    if (!grouped[e.transaction_id]) grouped[e.transaction_id] = { count: 0, lastEdited: e.edited_at, lastEditedBy: e.edited_by_name };
+    grouped[e.transaction_id].count++;
+  });
+  const ids = Object.keys(grouped);
+
+  const { data: txData } = await client.from('transactions').select('*').in('id', ids);
+  const txMap = {};
+  (txData || []).forEach(t => txMap[t.id] = t);
+
+  $('#edited-list').innerHTML = ids.map(id => {
+    const t = txMap[id];
+    if (!t) return '';
+    const info = grouped[id];
+    const cat = catById(t.category_id);
+    return `<div class="tx-row" data-tx-id="${t.id}">
+        <div class="tx-icon" style="background:${(cat?cat.color:'#8E8E93')}22;">${cat?cat.icon:'💳'}</div>
+        <div class="tx-info">
+          <div class="cat">${cat?cat.name:'Bez kategorije'}${t.deleted_at ? ' · <span style="color:var(--red);">obrisana</span>' : ''}</div>
+          <div class="desc">${t.description||'—'}</div>
+          <div class="desc">Izmenjeno ${info.count}x · poslednji put ${info.lastEditedBy||'—'}, ${new Date(info.lastEdited).toLocaleString('sr-RS')}</div>
+        </div>
+        <div class="tx-meta"><div class="tx-amount ${t.type}">${t.type==='income'?'+':'−'} ${fmt(t.amount)}</div></div>
+      </div>`;
+  }).join('') || emptyStateHTML('Nema izmenjenih transakcija');
+}
+$('#edited-close')?.addEventListener('click', () => { $('#edited-overlay').classList.remove('show'); $('#edited-sheet').classList.remove('show'); });
+$('#edited-overlay')?.addEventListener('click', () => { $('#edited-overlay').classList.remove('show'); $('#edited-sheet').classList.remove('show'); });
 
 // ---------- OTPAD (Trash) ----------
 $('#open-trash-btn')?.addEventListener('click', openTrash);

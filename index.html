@@ -1009,6 +1009,8 @@ async function analyzeReceipt(url) {
       const reason = (data && data.message) ? data.message : 'nepoznat razlog';
       let debugText = 'REZULTAT ANALIZE:\nRazlog: ' + reason + '\nDijagnostika: ' + (data?._diag || '—');
       if (data && data._rawTextPreview) debugText += '\n\nPročitan tekst sa stranice (prvih 800 znakova):\n' + data._rawTextPreview;
+      if (data && data._step1Info) debugText += '\n\nKorak 1 (posета stranice): ' + data._step1Info;
+      if (data && data._rawResult) debugText += '\n\nRezultat poziva (korak 2):\n' + JSON.stringify(data._rawResult, null, 2).slice(0, 600);
       if (data && data._allAttempts) {
         debugText += '\n\n--- SVI POKUŠANI POZIVI ---';
         data._allAttempts.forEach((a, i) => {

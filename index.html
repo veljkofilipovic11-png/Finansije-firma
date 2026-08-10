@@ -33,36 +33,40 @@
   #login button { width:100%; background:var(--accent); color:white; border:none; border-radius:14px;
     padding:15px; font-size:17px; font-weight:700; margin-top:6px; font-family:inherit; }
   #login button:disabled { background:#C7C7CC; }
-  #login .error { color:var(--red); font-size:13px; margin-top:10px; min-height:16px; }
+  #login .error, .error { color:var(--red); font-size:13px; margin-top:10px; min-height:16px; }
   #login .toggle { text-align:center; margin-top:18px; color:var(--accent); font-size:14px; font-weight:600; }
 
   header.top { padding: calc(16px + env(safe-area-inset-top)) 20px 8px; position:sticky; top:0; z-index:5; background:var(--bg); }
-  header.top .row { display:flex; align-items:center; }
+  header.top .row { display:flex; align-items:flex-start; justify-content:space-between; }
+  header.top .company-label { font-size:12px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:1px; }
   header.top h1 { font-size:26px; font-weight:700; margin:0; letter-spacing:-0.02em; }
   header.top .sub { color:var(--text-secondary); font-size:13px; margin-top:2px; display:flex; align-items:center; gap:6px; }
   .dot { width:7px; height:7px; border-radius:50%; background:var(--green); display:inline-block; flex-shrink:0; }
-  header.top .logout { margin-left:auto; color:var(--accent); font-size:13px; font-weight:600; background:none; border:none; font-family:inherit; }
+  header.top .logout { color:var(--accent); font-size:13px; font-weight:600; background:none; border:none; font-family:inherit; padding-top:2px; }
 
   .screen { padding: 8px 20px 20px; display:none; animation: fadeIn 0.25s ease; }
   .screen.active { display:block; }
   @keyframes fadeIn { from { opacity:0; transform:translateY(6px);} to { opacity:1; transform:translateY(0);} }
 
-  .balance-card { background: linear-gradient(135deg, var(--accent), #0040DD); color:white; border-radius:24px;
-    padding:24px 22px; margin:8px 0 16px; box-shadow:0 12px 24px rgba(0,90,220,0.2); }
+  .balance-card { background: linear-gradient(135deg, var(--accent), #0040DD); color:white; border-radius:26px;
+    padding:26px 22px; margin:8px 0 16px; box-shadow:0 16px 32px rgba(0,90,220,0.25); position:relative; overflow:hidden; }
+  .balance-card::after { content:""; position:absolute; top:-40%; right:-20%; width:180px; height:180px; border-radius:50%;
+    background:rgba(255,255,255,0.08); pointer-events:none; }
   .balance-card .label { font-size:14px; opacity:0.85; font-weight:500; }
-  .balance-card .amount { font-size:38px; font-weight:700; letter-spacing:-0.02em; margin-top:4px; }
+  .balance-card .amount { font-size:40px; font-weight:800; letter-spacing:-0.02em; margin-top:4px; }
   .balance-card .split { display:flex; gap:16px; margin-top:14px; font-size:12px; opacity:0.9; }
 
   .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
-  .tile { background:var(--card); border-radius:var(--radius); padding:14px 16px; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+  .tile { background:var(--card); border-radius:var(--radius); padding:14px 16px; box-shadow:0 2px 10px rgba(0,0,0,0.05); border:1px solid var(--border); }
   .tile .t-label { font-size:12px; color:var(--text-secondary); font-weight:500; }
   .tile .t-amount { font-size:19px; font-weight:700; margin-top:4px; }
   .tile.income .t-amount { color:var(--green); }
   .tile.expense .t-amount { color:var(--red); }
 
   .section-title { font-size:19px; font-weight:700; margin:18px 0 10px; letter-spacing:-0.01em; display:flex; justify-content:space-between; align-items:center; }
-  .card-list { background:var(--card); border-radius:var(--radius); box-shadow:0 1px 3px rgba(0,0,0,0.06); overflow:hidden; }
-  .tx-row { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); }
+  .card-list { background:var(--card); border-radius:var(--radius); box-shadow:0 2px 12px rgba(0,0,0,0.05); border:1px solid var(--border); overflow:hidden; }
+  .tx-row { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); transition:background 0.15s; }
+  .tx-row:active { background:var(--bg); }
   .tx-row:last-child { border-bottom:none; }
   .tx-icon { width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
   .tx-info { flex:1; min-width:0; }
@@ -183,7 +187,7 @@
 <body>
 
 <div id="login">
-  <h1>Firma — Finansije</h1>
+  <h1 id="login-company-name">Firma — Finansije</h1>
   <p class="sub">Prijavi se svojim nalogom</p>
   <input type="email" id="login-email" placeholder="Email" autocapitalize="off" autocomplete="email" />
   <input type="password" id="login-password" placeholder="Lozinka" autocomplete="current-password" />
@@ -195,10 +199,13 @@
 <div id="app">
   <header class="top">
     <div class="row">
-      <h1 id="header-title">Dashboard</h1>
+      <div>
+        <div class="company-label" id="company-name-label">Firma</div>
+        <h1 id="header-title">Dashboard</h1>
+      </div>
       <button class="logout" id="logout-btn">Odjavi se</button>
     </div>
-    <div class="sub"><span class="dot" id="status-dot"></span><span id="sync-label">Povezano</span></div>
+    <div class="sub"><span class="dot" id="status-dot"></span><span id="sync-label">Povezano</span><span id="user-name-label" style="margin-left:8px; opacity:0.7;"></span></div>
   </header>
 
   <section class="screen active" id="screen-dashboard">
@@ -222,18 +229,33 @@
     </div>
     <div class="filter-row">
       <select class="filter-select" id="filter-category"><option value="all">Sve kategorije</option></select>
-      <select class="filter-select" id="filter-sort">
+      <select class="filter-select" id="filter-creator"><option value="all">Svi korisnici</option></select>
+    </div>
+    <div class="filter-row">
+      <select class="filter-select" id="filter-sort" style="flex:1 1 100%;">
         <option value="date_desc">Datum ↓ najnovije</option>
         <option value="date_asc">Datum ↑ najstarije</option>
         <option value="amount_desc">Iznos ↓ najveći</option>
         <option value="amount_asc">Iznos ↑ najmanji</option>
+        <option value="category_asc">Kategorija A→Š</option>
+        <option value="category_desc">Kategorija Š→A</option>
+        <option value="creator_asc">Korisnik A→Š</option>
       </select>
     </div>
+    <div class="section-title" style="margin-top:0;"><span id="history-count">0 transakcija</span></div>
     <div class="card-list" id="history-list"></div>
   </section>
 
   <section class="screen" id="screen-stats">
-    <div class="section-title" style="margin-top:8px;">Rashodi po kategoriji (mesec)</div>
+    <div class="filter-row" style="margin-top:8px;">
+      <select class="filter-select" id="stats-sort" style="flex:1 1 100%;">
+        <option value="amount_desc">Po iznosu ↓ najveći</option>
+        <option value="amount_asc">Po iznosu ↑ najmanji</option>
+        <option value="name_asc">Po nazivu A→Š</option>
+        <option value="name_desc">Po nazivu Š→A</option>
+      </select>
+    </div>
+    <div class="section-title">Rashodi po kategoriji (mesec)</div>
     <div class="card-list" style="padding:16px;" id="stats-expense"></div>
     <div class="section-title">Prihodi po kategoriji (mesec)</div>
     <div class="card-list" style="padding:16px;" id="stats-income"></div>
@@ -248,7 +270,24 @@
   </section>
 
   <section class="screen" id="screen-settings">
-    <div class="section-title" style="margin-top:8px;">Boja teme</div>
+    <div class="section-title" style="margin-top:8px;">Podaci</div>
+    <div class="card-list" style="padding:16px; margin-bottom:16px;">
+      <div class="field-group" style="margin-bottom:14px;">
+        <div class="field-label">NAZIV FIRME</div>
+        <input type="text" id="company-name-input" placeholder="npr. Firma d.o.o." />
+      </div>
+      <button class="secondary-btn" id="save-company-btn" style="margin-top:0;">Sačuvaj naziv firme</button>
+    </div>
+    <div class="card-list" style="padding:16px; margin-bottom:16px;">
+      <div class="field-group" style="margin-bottom:14px;">
+        <div class="field-label">TVOJE IME (prikazuje se uz svaku transakciju)</div>
+        <input type="text" id="user-name-input" placeholder="npr. Marko" />
+      </div>
+      <button class="secondary-btn" id="save-username-btn" style="margin-top:0;">Sačuvaj svoje ime</button>
+      <div class="error" id="username-error" style="min-height:14px; margin-top:6px;"></div>
+    </div>
+
+    <div class="section-title">Boja teme</div>
     <div class="theme-row" id="theme-swatches"></div>
     <div class="settings-toggle">
       <span>Tamna tema</span>
@@ -260,7 +299,7 @@
 
   <nav class="tabbar">
     <button class="tab active" data-tab="dashboard"><span class="ic">🏠</span>Dashboard</button>
-    <button class="tab" data-tab="history"><span class="ic">📋</span>Istorija</button>
+    <button class="tab" data-tab="history"><span class="ic">📋</span>Sve</button>
     <button class="tab" data-tab="stats"><span class="ic">📊</span>Statistika</button>
     <button class="tab" data-tab="categories"><span class="ic">🏷️</span>Kategorije</button>
     <button class="tab" data-tab="settings"><span class="ic">⚙️</span>Podešavanja</button>
@@ -341,18 +380,20 @@
 
   <div id="qr-manual-form" style="display:none; margin-top:16px;">
     <div class="field-group">
-      <div class="field-label">PFR BROJ</div>
-      <input type="text" id="manual-pfr-input" placeholder="npr. Z9BR74H2" />
+      <div class="field-label">PFR BROJ RAČUNA</div>
+      <input type="text" id="manual-pfr-input" placeholder="npr. V8LC4D7H-V8LC4D7H-214705" />
     </div>
-    <div class="field-group">
-      <div class="field-label">UKUPAN IZNOS SA RAČUNA</div>
+    <button class="save-btn" id="manual-confirm-btn" style="margin-top:0;">Potvrdi i pokušaj automatski</button>
+    <p style="font-size:11px; color:var(--text-secondary); margin:8px 0 0;">Pokušaćemo da automatski nađemo iznos i stavke preko PFR broja. Ako ne uspe, uneće se ručno.</p>
+
+    <div class="field-group" style="margin-top:16px;">
+      <div class="field-label">UKUPAN IZNOS (rezervno, ako automatika ne uspe)</div>
       <input type="text" inputmode="decimal" id="manual-amount-input" placeholder="0" />
     </div>
     <div class="field-group">
       <div class="field-label">NAZIV PRODAVNICE (OPCIONO)</div>
       <input type="text" id="manual-shop-input" placeholder="npr. Maxi" />
     </div>
-    <button class="save-btn" id="manual-confirm-btn">Prebaci u formu za unos</button>
   </div>
 
   <div id="debug-log" style="display:none; margin-top:16px; background:var(--bg); border-radius:12px; padding:12px; font-family:ui-monospace,monospace; font-size:11px; color:var(--text); white-space:pre-wrap; user-select:text; max-height:220px; overflow-y:auto;"></div>
@@ -424,6 +465,8 @@ let editingCategoryId = null;
 let catFormType = 'expense';
 let catFormColor = THEME_COLORS[0];
 let qrStream = null;
+let currentUserId = null;
+let companyName = 'Firma';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -498,14 +541,69 @@ $('#logout-btn').addEventListener('click', async () => {
 });
 
 async function enterApp(user) {
+  currentUserId = user.id;
+  // Podrazumevano ime iz email-a, dok se ne ucita pravi profil (ili ako ga korisnik nikad ne postavi)
   currentUserName = (user.email || 'Korisnik').split('@')[0];
   currentUserName = currentUserName.charAt(0).toUpperCase() + currentUserName.slice(1);
   $('#login').style.display = 'none'; $('#app').style.display = 'block';
   renderThemeSwatches();
-  await Promise.all([fetchCategories(), fetchTransactions()]);
+  await Promise.all([fetchCategories(), fetchTransactions(), fetchAppSettings(), fetchUserProfile()]);
   subscribeRealtime();
   setInterval(() => { fetchTransactions(true); fetchCategories(); }, 30000); // auto-sync svakih 30s (dopuna uz realtime)
 }
+
+// ---------- PODESAVANJA: naziv firme i ime korisnika ----------
+async function fetchAppSettings() {
+  const { data, error } = await client.from('app_settings').select('*').eq('id', 1).maybeSingle();
+  if (error) { console.error('app_settings greška (verovatno migracija v4 nije pokrenuta):', error); return; }
+  if (data && data.company_name) {
+    companyName = data.company_name;
+    $('#company-name-label').textContent = companyName;
+    $('#login-company-name').textContent = companyName + ' — Finansije';
+    document.title = companyName + ' — Finansije';
+    $('#company-name-input').value = companyName;
+  }
+}
+$('#save-company-btn').addEventListener('click', async () => {
+  const val = $('#company-name-input').value.trim();
+  if (!val) { toast('⚠️ Unesi naziv firme'); return; }
+  try {
+    const { error } = await client.from('app_settings').upsert({ id: 1, company_name: val });
+    if (error) throw error;
+    toast('✓ Naziv firme sačuvan');
+    fetchAppSettings();
+  } catch (e) { toast('⚠️ Greška: ' + (e.message || 'čuvanje nije uspelo') + ' (proveri da li je migracija v4 pokrenuta)'); }
+});
+
+async function fetchUserProfile() {
+  const { data, error } = await client.from('user_profiles').select('*').eq('user_id', currentUserId).maybeSingle();
+  if (error) { console.error('user_profiles greška (verovatno migracija v4 nije pokrenuta):', error); return; }
+  if (data && data.display_name) {
+    currentUserName = data.display_name;
+    $('#user-name-input').value = currentUserName;
+  } else {
+    $('#user-name-input').value = currentUserName;
+  }
+  $('#user-name-label').textContent = '· ' + currentUserName;
+}
+$('#save-username-btn').addEventListener('click', async () => {
+  const val = $('#user-name-input').value.trim();
+  $('#username-error').textContent = '';
+  if (!val) { $('#username-error').textContent = 'Unesi ime.'; return; }
+  try {
+    const { error } = await client.from('user_profiles').upsert({ user_id: currentUserId, display_name: val });
+    if (error) {
+      if (error.code === '23505' || /duplicate|unique/i.test(error.message)) {
+        $('#username-error').textContent = 'To ime je već zauzeto — izaberi drugo.';
+        return;
+      }
+      throw error;
+    }
+    currentUserName = val;
+    $('#user-name-label').textContent = '· ' + currentUserName;
+    toast('✓ Ime sačuvano');
+  } catch (e) { $('#username-error').textContent = 'Greška: ' + (e.message || 'čuvanje nije uspelo') + ' (proveri migraciju v4)'; }
+});
 
 // ---------- DATA: CATEGORIES ----------
 async function fetchCategories() {
@@ -533,7 +631,8 @@ async function deleteCategoryFromDB(id) {
 
 // ---------- DATA: TRANSACTIONS ----------
 async function fetchTransactions(silent) {
-  const { data, error } = await client.from('transactions').select('*').order('date', { ascending:false });
+  const { data, error } = await client.from('transactions').select('*')
+    .order('date', { ascending:false }).order('created_at', { ascending:false });
   if (error) { setStatus('error', 'Greška pri učitavanju'); console.error(error); return; }
   transactions = data || [];
   setStatus('ok', 'Povezano');
@@ -594,6 +693,7 @@ function render() {
   const recent = [...transactions].slice(0,5);
   $('#recent-list').innerHTML = recent.length ? recent.map(txRowHTML).join('') : emptyStateHTML('Još uvek nema transakcija');
 
+  renderFilterCategoryOptions();
   renderHistory();
   renderStatBlock('expense', '#stats-expense', '#FF3B30');
   renderStatBlock('income', '#stats-income', '#34C759');
@@ -603,23 +703,31 @@ function renderHistory() {
   const typeF = $('#filter-type').value;
   const payF = $('#filter-payment').value;
   const catF = $('#filter-category').value;
+  const creatorF = $('#filter-creator').value;
   const sortF = $('#filter-sort').value;
 
   let list = [...transactions];
   if (typeF !== 'all') list = list.filter(t => t.type === typeF);
   if (payF !== 'all') list = list.filter(t => (t.payment_method||'account') === payF);
   if (catF !== 'all') list = list.filter(t => t.category_id === catF);
+  if (creatorF !== 'all') list = list.filter(t => (t.created_by_name||'') === creatorF);
+
+  const catName = (t) => { const c = catById(t.category_id); return c ? c.name : ''; };
 
   list.sort((a,b) => {
-    if (sortF === 'date_desc') return new Date(b.date) - new Date(a.date);
-    if (sortF === 'date_asc') return new Date(a.date) - new Date(b.date);
+    if (sortF === 'date_desc') return new Date(b.date) - new Date(a.date) || new Date(b.created_at) - new Date(a.created_at);
+    if (sortF === 'date_asc') return new Date(a.date) - new Date(b.date) || new Date(a.created_at) - new Date(b.created_at);
     if (sortF === 'amount_desc') return Number(b.amount) - Number(a.amount);
     if (sortF === 'amount_asc') return Number(a.amount) - Number(b.amount);
+    if (sortF === 'category_asc') return catName(a).localeCompare(catName(b), 'sr');
+    if (sortF === 'category_desc') return catName(b).localeCompare(catName(a), 'sr');
+    if (sortF === 'creator_asc') return (a.created_by_name||'').localeCompare(b.created_by_name||'', 'sr');
   });
 
+  $('#history-count').textContent = list.length + (list.length === 1 ? ' transakcija' : ' transakcija');
   $('#history-list').innerHTML = list.length ? list.map(txRowHTML).join('') : emptyStateHTML('Nema transakcija za ovaj filter');
 }
-['filter-type','filter-payment','filter-category','filter-sort'].forEach(id => {
+['filter-type','filter-payment','filter-category','filter-creator','filter-sort'].forEach(id => {
   document.addEventListener('change', (e) => { if (e.target.id === id) renderHistory(); });
 });
 
@@ -650,7 +758,15 @@ function renderStatBlock(type, containerSel, color) {
   const total = monthTx.reduce((s,t)=>s+Number(t.amount),0);
   const byCat = {};
   monthTx.forEach(t => { const key=t.category_id||'none'; byCat[key]=(byCat[key]||0)+Number(t.amount); });
-  const entries = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  let entries = Object.entries(byCat);
+  const sortMode = $('#stats-sort') ? $('#stats-sort').value : 'amount_desc';
+  const nameOf = (catId) => { const c = catById(catId); return c ? c.name : 'Bez kategorije'; };
+  entries.sort((a,b) => {
+    if (sortMode === 'amount_asc') return a[1] - b[1];
+    if (sortMode === 'name_asc') return nameOf(a[0]).localeCompare(nameOf(b[0]), 'sr');
+    if (sortMode === 'name_desc') return nameOf(b[0]).localeCompare(nameOf(a[0]), 'sr');
+    return b[1] - a[1]; // amount_desc (default)
+  });
   const container = $(containerSel);
   if (!entries.length) { container.innerHTML = `<div style="color:var(--text-secondary); font-size:14px; text-align:center; padding:8px;">Nema podataka za ovaj mesec</div>`; return; }
   container.innerHTML = entries.map(([catId, amount]) => {
@@ -663,14 +779,21 @@ function renderStatBlock(type, containerSel, color) {
   }).join('');
 }
 
-// ---------- FILTER: category dropdown populate ----------
+// ---------- FILTER: category/creator dropdown populate ----------
 function renderFilterCategoryOptions() {
   const sel = $('#filter-category');
   const prev = sel.value;
   sel.innerHTML = '<option value="all">Sve kategorije</option>' +
     categories.map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
   if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+
+  const creatorSel = $('#filter-creator');
+  const prevCreator = creatorSel.value;
+  const creators = [...new Set(transactions.map(t => t.created_by_name).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'sr'));
+  creatorSel.innerHTML = '<option value="all">Svi korisnici</option>' + creators.map(c => `<option value="${c}">${c}</option>`).join('');
+  if ([...creatorSel.options].some(o => o.value === prevCreator)) creatorSel.value = prevCreator;
 }
+$('#stats-sort')?.addEventListener('change', render);
 
 // ---------- TABS ----------
 function switchTab(tab) {
@@ -678,7 +801,7 @@ function switchTab(tab) {
   $(`#screen-${tab}`).classList.add('active');
   $$('.tabbar .tab').forEach(b => b.classList.remove('active'));
   document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
-  const titles = { dashboard:'Dashboard', history:'Istorija', stats:'Statistika', categories:'Kategorije', settings:'Podešavanja' };
+  const titles = { dashboard:'Dashboard', history:'Sve transakcije', stats:'Statistika', categories:'Kategorije', settings:'Podešavanja' };
   $('#header-title').textContent = titles[tab];
   if (tab === 'history') renderFilterCategoryOptions();
 }
@@ -821,6 +944,7 @@ $('#scan-qr-btn').addEventListener('click', openQrSheet);
 function openQrSheet() {
   $('#qr-manual-form').style.display = 'none';
   $('#qr-mode-camera').style.display = 'block';
+  $('#manual-pfr-input').value = ''; $('#manual-amount-input').value = ''; $('#manual-shop-input').value = '';
   $('#debug-log').style.display = 'none'; $('#debug-log').textContent = '';
   $('#debug-continue-btn').style.display = 'none';
   $('#qr-overlay').classList.add('show'); $('#qr-sheet').classList.add('show');
@@ -891,9 +1015,9 @@ $('#qr-file-input').addEventListener('change', (e) => {
 });
 
 async function runReceiptOCR(canvas) {
-  toast('🔍 Čitam tekst sa slike računa...');
+  toast('🔍 Čitam tekst sa slike (srpski)...');
   try {
-    const { data } = await Tesseract.recognize(canvas, 'eng');
+    const { data } = await Tesseract.recognize(canvas, 'srp+eng');
     const text = data.text || '';
     console.log('OCR tekst:', text);
     const total = extractTotalFromText(text);
@@ -901,7 +1025,7 @@ async function runReceiptOCR(canvas) {
       $('#amount-input').value = String(total);
       toast('✓ Prepoznat iznos: ' + fmt(total) + ' — proveri i ispravi ako treba');
     } else {
-      toast('⚠️ Nisam sigurno prepoznao iznos sa slike — unesi ručno');
+      toast('⚠️ Nisam sigurno prepoznao iznos — unesi ručno');
     }
     closeQrSheet();
     openSheetIfClosed();
@@ -948,30 +1072,67 @@ function handleReceiptUrl(url) {
   });
 }
 
+async function analyzeReceiptManual(invoiceNumber) {
+  toast('🔎 Proveravam PFR broj...');
+  try {
+    const { data, error } = await client.functions.invoke('purse-receipt', { body: { invoiceNumber } });
+    if (error) {
+      logDebug('GREŠKA PRI POZIVU FUNKCIJE:\n' + (error.message || String(error)));
+      throw error;
+    }
+    if (data && data.success) {
+      receiptItems = data.items || [];
+      receiptShop = data.metadata?.shopFullName || receiptShop;
+      if (data.totalAmount) { $('#amount-input').value = String(data.totalAmount); }
+      if (receiptShop && (!$('#desc-input').value || $('#desc-input').value === 'Fiskalni račun')) {
+        $('#desc-input').value = receiptShop;
+      }
+      toast('✓ Račun nađen — iznos: ' + fmt(data.totalAmount) + ' — proveri i sačuvaj');
+      validateForm();
+      return true;
+    } else {
+      const reason = (data && data.message) ? data.message : 'nepoznat razlog';
+      logDebug('REZULTAT PROVERE PFR BROJA:\nRazlog: ' + reason + '\nDijagnostika: ' + (data?._diag || '—'));
+      return false;
+    }
+  } catch (e) {
+    return false;
+  }
+}
+
 // Ručni unos (bez kamere/QR-a)
 $('#qr-manual-toggle-btn').addEventListener('click', () => {
   stopQrScan();
   $('#qr-mode-camera').style.display = 'none';
   $('#qr-manual-form').style.display = 'block';
 });
-$('#manual-confirm-btn').addEventListener('click', () => {
+$('#manual-confirm-btn').addEventListener('click', async () => {
   const pfr = $('#manual-pfr-input').value.trim();
-  const amount = $('#manual-amount-input').value.trim();
+  const amountRaw = $('#manual-amount-input').value.trim();
   const shop = $('#manual-shop-input').value.trim();
-  if (!amount || !(parseFloat(amount.replace(',','.')) > 0)) {
-    toast('⚠️ Unesi ispravan iznos'); return;
-  }
+  if (!pfr) { toast('⚠️ Unesi PFR broj računa'); return; }
+
   receiptUrl = null; // nema QR linka kod ručnog unosa
   receiptShop = shop || null;
-  window.__manualPfr = pfr || null;
-  closeQrSheet();
-  openSheetIfClosed();
-  $('#amount-input').value = amount.replace(',','.');
-  if (shop && !$('#desc-input').value) $('#desc-input').value = shop;
-  toast('✓ Podaci uneti — izaberi kategoriju i sačuvaj');
-  validateForm();
-  // Reset polja za sledeći put
-  $('#manual-pfr-input').value = ''; $('#manual-amount-input').value = ''; $('#manual-shop-input').value = '';
+
+  $('#manual-confirm-btn').disabled = true; $('#manual-confirm-btn').textContent = 'Proveravam...';
+  const ok = await analyzeReceiptManual(pfr);
+  $('#manual-confirm-btn').disabled = false; $('#manual-confirm-btn').textContent = 'Potvrdi i pokušaj automatski';
+
+  if (ok) {
+    closeQrSheet(); openSheetIfClosed(); validateForm();
+    return;
+  }
+
+  // Automatika nije uspela — koristi ručno unet iznos ako postoji
+  if (amountRaw && parseFloat(amountRaw.replace(',','.')) > 0) {
+    $('#amount-input').value = amountRaw.replace(',','.');
+    if (shop && !$('#desc-input').value) $('#desc-input').value = shop;
+    closeQrSheet(); openSheetIfClosed(); validateForm();
+    toast('⚠️ Automatska provera nije uspela — korišćen ručno unet iznos');
+  } else {
+    toast('⚠️ Automatska provera nije uspela — unesi iznos ispod pa tapni Potvrdi ponovo');
+  }
 });
 function openSheetIfClosed() {
   if (!$('#add-sheet').classList.contains('show')) {

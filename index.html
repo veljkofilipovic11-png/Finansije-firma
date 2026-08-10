@@ -5,6 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Firma — Finansije</title>
+<script>
+function showErrorBanner(text) {
+  var box = document.createElement('div');
+  box.style.cssText = 'position:fixed; top:0; left:0; right:0; z-index:99999; background:#FF3B30; color:white; padding:16px; font-family:ui-monospace,monospace; font-size:12px; white-space:pre-wrap; max-height:60vh; overflow-y:auto;';
+  box.textContent = text;
+  document.body.prepend(box);
+}
+window.addEventListener('error', function (e) {
+  showErrorBanner('GREŠKA U APLIKACIJI:\n' + e.message + '\nFajl: ' + (e.filename||'') + '\nLinija: ' + e.lineno + ':' + e.colno + (e.error && e.error.stack ? '\n\nStack:\n' + e.error.stack : ''));
+});
+window.addEventListener('unhandledrejection', function (e) {
+  var reason = e.reason;
+  var msg = (reason && reason.message) ? reason.message : String(reason);
+  var stack = (reason && reason.stack) ? reason.stack : '';
+  showErrorBanner('NEUHVAĆENA ASYNC GREŠKA:\n' + msg + (stack ? '\n\nStack:\n' + stack : ''));
+});
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -505,6 +522,14 @@ const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 const THEME_COLORS = ['#007AFF','#34C759','#FF9500','#FF3B30','#AF52DE','#5AC8FA','#FF2D55','#8E8E93'];
+const COLOR_VARS = [
+  { key:'accent', label:'Akcentna boja', cssVar:'--accent', default:'#007AFF' },
+  { key:'bg', label:'Pozadina', cssVar:'--bg', default:'#F2F2F7' },
+  { key:'card', label:'Kartice', cssVar:'--card', default:'#FFFFFF' },
+  { key:'text', label:'Tekst', cssVar:'--text', default:'#1C1C1E' },
+  { key:'green', label:'Boja prihoda', cssVar:'--green', default:'#34C759' },
+  { key:'red', label:'Boja rashoda', cssVar:'--red', default:'#FF3B30' },
+];
 
 let transactions = [];
 let categories = [];
@@ -587,6 +612,7 @@ $('#login-btn').addEventListener('click', async () => {
     await enterApp(data.session.user);
   } catch (err) {
     $('#login-error').textContent = err.message || 'Greška pri prijavi.';
+    showErrorBanner('GREŠKA PRI PRIJAVI:\n' + (err.message || String(err)) + (err.stack ? '\n\nStack:\n' + err.stack : ''));
     $('#login-btn').disabled = false; $('#login-btn').textContent = isSignupMode ? 'Registruj se' : 'Prijavi se';
   }
 });
@@ -1415,14 +1441,6 @@ $('#salary-save-btn').addEventListener('click', async () => {
 });
 
 // ---------- NAPREDNA PRILAGODBA BOJA ----------
-const COLOR_VARS = [
-  { key:'accent', label:'Akcentna boja', cssVar:'--accent', default:'#007AFF' },
-  { key:'bg', label:'Pozadina', cssVar:'--bg', default:'#F2F2F7' },
-  { key:'card', label:'Kartice', cssVar:'--card', default:'#FFFFFF' },
-  { key:'text', label:'Tekst', cssVar:'--text', default:'#1C1C1E' },
-  { key:'green', label:'Boja prihoda', cssVar:'--green', default:'#34C759' },
-  { key:'red', label:'Boja rashoda', cssVar:'--red', default:'#FF3B30' },
-];
 function renderCustomColorsList() {
   const el = $('#custom-colors-list');
   if (!el) return;

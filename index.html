@@ -8,6 +8,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<meta name="theme-color" content="#007AFF">
 <script>
 function showErrorBanner(text) {
   var box = document.createElement('div');
@@ -214,6 +218,34 @@ window.addEventListener('unhandledrejection', function (e) {
   header.top h1 { font-weight: 800; }
   .section-title { font-weight: 800; }
   .save-btn, .secondary-btn { font-weight: 700; }
+  /* ================= DESKTOP LAYOUT (širi ekrani) ================= */
+  @media (min-width: 900px) {
+    #app { max-width: 1100px; }
+
+    header.top { padding-left: 240px; }
+    .screen { padding-left: 240px; padding-right: 40px; }
+
+    nav.tabbar {
+      left: 0; right: auto; transform: none;
+      width: 220px; max-width: 220px;
+      top: 0; bottom: 0; height: 100vh;
+      flex-direction: column; justify-content: flex-start; align-items: stretch;
+      padding: 28px 14px; gap: 6px;
+      border-top: none; border-right: 1px solid var(--border);
+    }
+    nav.tabbar button {
+      flex-direction: row; justify-content: flex-start; gap: 12px;
+      padding: 12px 14px; border-radius: 12px; font-size: 14px;
+    }
+    nav.tabbar button.active { background: rgba(0,122,255,0.1); }
+    nav.tabbar button svg { width: 20px; height: 20px; margin-bottom: 0; }
+
+    .fab { left: auto; right: 40px; margin-left: 0; bottom: 40px; }
+
+    .filter-row { flex-wrap: wrap; }
+
+    .sheet { max-width: 480px; }
+  }
 </style>
 </head>
 <body>
@@ -762,6 +794,10 @@ async function fetchCategories() {
   categories = data || [];
   renderCategoryPickers();
   renderCategoriesTab();
+  // Bitno: transakcije se učitavaju paralelno sa kategorijama (radi brzine),
+  // pa ako se transakcije prikažu PRE kategorija, sve bi pisalo "Bez kategorije".
+  // Zato ovde ponovo osvežimo glavni prikaz čim kategorije stignu, bez obzira na redosled.
+  render();
 }
 function catById(id) { return categories.find(c => c.id === id); }
 
@@ -784,7 +820,14 @@ async function fetchTransactions(silent) {
   const { data, error } = await client.from('transactions').select('*')
     .is('deleted_at', null)
     .order('date', { ascending:false }).order('created_at', { ascending:false });
-  if (error) { setStatus('error', 'Greška pri učitavanju'); console.error(error); return; }
+  if (error) {
+    setStatus('error', 'Greška pri učitavanju');
+    console.error(error);
+    if (!silent) {
+      showErrorBanner('NE MOGU DA UČITAM TRANSAKCIJE:\n' + (error.message || String(error)) + '\n\nOvo NE znači da su podaci obrisani — verovatno je problem sa konekcijom ili sesijom. Probaj da se odjaviš i ponovo prijaviš. Tvoji podaci su bezbedni u bazi.');
+    }
+    return;
+  }
   transactions = data || [];
   setStatus('ok', 'Povezano');
   render();
@@ -2000,6 +2043,11 @@ async function openTrash() {
 }
 $('#trash-close')?.addEventListener('click', () => { $('#trash-overlay').classList.remove('show'); $('#trash-sheet').classList.remove('show'); });
 $('#trash-overlay')?.addEventListener('click', () => { $('#trash-overlay').classList.remove('show'); $('#trash-sheet').classList.remove('show'); });
+
+// ---------- PWA: registracija service worker-a (potrebno za instalaciju na Android/Windows) ----------
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 
 // ---------- INIT ----------
 (async () => {
